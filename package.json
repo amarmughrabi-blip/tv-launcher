@@ -8,7 +8,12 @@
     "test": "node --test test/*.test.js",
     "gate": "./scripts/run.sh scripts/drm-gate.js",
     "setup": "./scripts/setup-ecs.sh",
-    "start": "./scripts/run.sh"
+    "start": "./scripts/run.sh",
+    "verify:editing": "TVL_VERIFY=scripts/verify-editing.js ./scripts/run.sh",
+    "verify:browsing": "TVL_VERIFY=scripts/verify-browsing.js ./scripts/run.sh",
+    "verify:icons": "node scripts/make-fixture.js && TVL_VERIFY=scripts/verify-icons.js ./scripts/run.sh",
+    "verify:blocking": "./scripts/run.sh scripts/verify-blocking.js",
+    "verify": "npm test && npm run verify:blocking && npm run verify:editing && npm run verify:browsing && npm run verify:icons"
   },
   "dependencies": {
     "@ghostery/adblocker": "^2.20.1"

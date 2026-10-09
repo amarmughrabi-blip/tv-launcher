@@ -1,0 +1,330 @@
+/* TV-style launcher: a dark room, a wall of tiles, one thing obviously selected. */
+
+:root {
+  --bg: #0b0d12;
+  --tile: #181c25;
+  --tile-hover: #222836;
+  --text: #e8ecf4;
+  --muted: #8d97ab;
+  --accent: #4c8dff;
+  --danger: #e5534b;
+  --radius: 14px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: radial-gradient(1200px 700px at 50% -10%, #1a2030 0%, var(--bg) 60%);
+  color: var(--text);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* ---------------- top bar ---------------- */
+
+.bar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 0 26px;
+  height: 52px;
+  flex: none;
+}
+
+.site-title {
+  font-size: 15px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search {
+  flex: 1;
+  max-width: 420px;
+  background: var(--tile);
+  border: 1px solid #262d3b;
+  border-radius: 999px;
+  color: var(--text);
+  font: inherit;
+  padding: 10px 18px;
+  outline: none;
+}
+
+.search:focus {
+  border-color: var(--accent);
+}
+
+.bar-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+
+/* ---------------- buttons ---------------- */
+
+.btn {
+  background: var(--tile);
+  border: 1px solid #262d3b;
+  color: var(--text);
+  font: inherit;
+  padding: 9px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.btn:hover {
+  background: var(--tile-hover);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.btn-ghost {
+  background: transparent;
+}
+
+.btn-danger {
+  background: transparent;
+  border-color: #4a2a2a;
+  color: var(--danger);
+}
+
+.btn-small {
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+/* ---------------- the wall of tiles ---------------- */
+
+.grid {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px 26px 40px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 18px;
+  align-content: start;
+}
+
+.tile {
+  background: var(--tile);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  padding: 20px 10px 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.12s ease, transform 0.12s ease;
+}
+
+.tile:hover {
+  background: var(--tile-hover);
+}
+
+/* Keyboard focus is the primary input on a TV, so it has to be obvious. */
+.tile:focus {
+  outline: none;
+  background: var(--tile-hover);
+  border-color: var(--accent);
+  transform: scale(1.06);
+  box-shadow: 0 8px 30px rgba(76, 141, 255, 0.22);
+}
+
+.tile-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  object-fit: contain;
+  background: #0f131b;
+}
+
+/* No favicon and no custom icon: show the first letter instead. */
+.badge {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-size: 24px;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(140deg, #3b6fd4, #6b4fd0);
+}
+
+.tile-label {
+  font-size: 13px;
+  text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tile-edit {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  background: #2a3140;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.tile:hover .tile-edit,
+.tile:focus .tile-edit {
+  opacity: 1;
+}
+
+.tile-edit:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* ---------------- empty state ---------------- */
+
+.empty {
+  margin: auto;
+  color: var(--muted);
+  text-align: center;
+  padding: 0 24px 60px;
+}
+
+/* ---------------- dialogs ---------------- */
+
+.editor {
+  border: 1px solid #262d3b;
+  border-radius: 16px;
+  background: #131721;
+  color: var(--text);
+  padding: 22px;
+  width: min(440px, 92vw);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+
+.editor::backdrop {
+  background: rgba(4, 6, 10, 0.6);
+}
+
+.editor h2 {
+  margin: 0 0 16px;
+  font-size: 18px;
+}
+
+.field {
+  display: block;
+  margin-bottom: 14px;
+}
+
+.field > span {
+  display: block;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.field input {
+  width: 100%;
+  background: #0d1118;
+  border: 1px solid #262d3b;
+  border-radius: 8px;
+  color: var(--text);
+  font: inherit;
+  padding: 9px 12px;
+  outline: none;
+}
+
+.field input:focus {
+  border-color: var(--accent);
+}
+
+.field input[readonly] {
+  color: var(--muted);
+  background: #0a0d13;
+}
+
+.field small {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+}
+
+.icon-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.icon-preview {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  object-fit: contain;
+  background: #0d1118;
+}
+
+.icon-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.file-label {
+  display: inline-block;
+  cursor: pointer;
+}
+
+.editor-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 18px;
+  align-items: center;
+}
+
+.spacer {
+  flex: 1;
+}
+
+/* ---------------- toast ---------------- */
+
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1c2331;
+  border: 1px solid #2c3547;
+  border-radius: 999px;
+  padding: 10px 20px;
+  font-size: 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}

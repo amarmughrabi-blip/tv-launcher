@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' app-icon: data:; connect-src 'none'"
+    />
+    <title>TV Launcher</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <!-- One bar, two states: launcher controls, or controls for the open site.
+         It stays visible because the site view is inset below it. -->
+    <header class="bar" id="bar">
+      <button id="back" class="btn btn-ghost" hidden>← Back</button>
+
+      <input
+        id="search"
+        class="search"
+        type="search"
+        placeholder="Search apps"
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <span id="site-title" class="site-title" hidden></span>
+
+      <div class="bar-actions">
+        <button id="add" class="btn">Add app</button>
+        <button id="open-brave" class="btn btn-ghost" hidden>Open in Brave</button>
+      </div>
+    </header>
+
+    <main id="grid" class="grid" role="list"></main>
+
+    <p id="empty" class="empty" hidden>
+      No apps yet. Use <strong>Add app</strong> to put your first one on the grid.
+    </p>
+
+    <!-- Editing a name or icon never changes the underlying link. -->
+    <dialog id="editor" class="editor">
+      <form method="dialog" id="edit-form">
+        <h2 id="edit-title">Edit app</h2>
+
+        <label class="field">
+          <span>Name</span>
+          <input id="edit-name" type="text" autocomplete="off" />
+        </label>
+
+        <label class="field">
+          <span>Link</span>
+          <input id="edit-url" type="text" readonly />
+          <small>The link never changes when you rename or replace the icon.</small>
+        </label>
+
+        <div class="field">
+          <span>Icon</span>
+          <div class="icon-row">
+            <img id="edit-icon-preview" class="icon-preview" alt="" />
+            <div class="icon-actions">
+              <label class="btn btn-small file-label" for="edit-icon-input">Change…</label>
+              <input id="edit-icon-input" type="file" accept="image/*" hidden />
+              <button type="button" id="edit-icon-clear" class="btn btn-small btn-ghost">
+                Reset
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="editor-actions">
+          <button type="button" id="edit-remove" class="btn btn-danger">Remove</button>
+          <span class="spacer"></span>
+          <button type="button" id="edit-cancel" class="btn btn-ghost">Cancel</button>
+          <button type="submit" id="edit-save" class="btn btn-primary">Save</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="adder" class="editor">
+      <form method="dialog" id="add-form">
+        <h2>Add app</h2>
+        <label class="field">
+          <span>Link</span>
+          <input id="add-url" type="text" placeholder="example.com" autocomplete="off" />
+        </label>
+        <label class="field">
+          <span>Name</span>
+          <input id="add-name" type="text" placeholder="optional" autocomplete="off" />
+        </label>
+        <div class="editor-actions">
+          <span class="spacer"></span>
+          <button type="button" id="add-cancel" class="btn btn-ghost">Cancel</button>
+          <button type="submit" class="btn btn-primary">Add</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast" hidden></div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
