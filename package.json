@@ -1,0 +1,16 @@
+{
+  "name": "tv-launcher",
+  "version": "0.1.0",
+  "description": "TV-style launcher for streaming sites, with ad blocking and DRM playback in-window",
+  "main": "main.js",
+  "type": "commonjs",
+  "scripts": {
+    "test": "node --test test/",
+    "gate": "./scripts/run.sh scripts/drm-gate.js",
+    "setup": "./scripts/setup-ecs.sh",
+    "start": "./scripts/run.sh"
+  },
+  "dependencies": {
+    "@ghostery/adblocker": "^2.20.1"
+  }
+}
