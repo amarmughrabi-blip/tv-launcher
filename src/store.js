@@ -169,8 +169,10 @@ function reorder(url, direction) {
 }
 
 function deleteIcon(name) {
+  // Synchronous on purpose: removal is not on a hot path, and a caller that
+  // deletes a site and then checks the icon store must not race us.
   if (!name || !/^[a-f0-9]+\.png$/.test(name)) return; // never unlink outside the store
-  fs.rm(path.join(paths.iconsDir(), name), { force: true }, () => {});
+  fs.rmSync(path.join(paths.iconsDir(), name), { force: true });
 }
 
 module.exports = {
