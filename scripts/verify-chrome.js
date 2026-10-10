@@ -73,6 +73,17 @@ async function ensureSites() {
   if (!view) return fail('no site view open');
   out.push(`ok   site open at ${view.url}`);
 
+  // --- the reveal band must be a band, not the top half of the screen --------
+  // Reported from a wide reveal zone, the bar came back while the pointer was
+  // still well down the screen, which reads as it appearing at random.
+  const tooLow = await bridge.debugMouseMove(120);
+  if (!tooLow.ok) return fail('could not place the cursor below the reveal band');
+  await wait(500);
+  if (!hidden()) {
+    return fail('the bar revealed with the pointer 120px down, well short of the top');
+  }
+  out.push('ok   pointer below the top does not reveal the bar');
+
   // --- moving the pointer near the top brings it back ------------------------
   const revealed = await bridge.debugMouseMove(10);
   if (!revealed.ok) return fail('could not place the cursor near the top');
@@ -142,18 +153,40 @@ async function ensureSites() {
   if (typeof bridge.debugProbePointer !== 'function') {
     return fail('debug pointer probe missing — run with TVL_DEBUG_INPUT=1');
   }
-  const probe = await bridge.debugProbePointer(200, 12);
+  const probe = await bridge.debugProbePointer(200);
   if (!probe.ok) {
     return fail(
       'the site preload never reported a pointer event; reveal-on-hover would be dead',
     );
   }
+  if (probe.lastPointerY !== 200) {
+    return fail(`preload reported ${probe.lastPointerY}px, expected the 200px it was given`);
+  }
   out.push(`ok   site preload reports pointer height (${probe.lastPointerY}px)`);
 
-  // And it must have revealed the bar on its own.
+  // A real pointer at the top reveals the bar; the same pointer further down
+  // must not. Both go through the page's own DOM, not the debug shortcut.
+  await bridge.debugProbePointer(8);
   await wait(400);
-  if (hidden()) return fail('a real pointer near the top did not reveal the bar');
+  if (hidden()) return fail('a real pointer at the top did not reveal the bar');
   out.push('ok   a real pointer move reveals the bar');
+
+  for (let i = 0; i < 30 && !hidden(); i += 1) await wait(150);
+  if (!hidden()) return fail('the bar did not hide before the mid-page probe');
+  await bridge.debugProbePointer(140);
+  await wait(400);
+  if (!hidden()) return fail('a real pointer at 140px revealed the bar');
+  out.push('ok   a real pointer lower down leaves the bar hidden');
+
+  // Scrolling the page must not bring the bar back. It used to report the top
+  // on any scroll, so the bar appeared with the pointer nowhere near it.
+  await bridge.debugMouseMove(400);
+  for (let i = 0; i < 30 && !hidden(); i += 1) await wait(150);
+  if (!hidden()) return fail('the bar did not hide before the scroll probe');
+  await bridge.debugProbePointer(0, { scroll: true });
+  await wait(500);
+  if (!hidden()) return fail('scrolling the page revealed the bar');
+  out.push('ok   scrolling does not reveal the bar');
 
   // --- an icon can be changed through the file input -------------------------
   let editorTile = document.querySelector('.tile');

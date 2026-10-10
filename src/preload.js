@@ -59,9 +59,14 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('chrome:offset', (_e, offset) => fn(offset));
   },
   // Present only when the app is started with TVL_DEBUG_INPUT=1.
-  debugMouseMove: (x, y) => ipcRenderer.invoke('debug:mouse-move', { x, y }),
+  //
+  // These take a single vertical position. They used to take (x, y), but every
+  // caller passed one argument, so `y` was always undefined and the handler
+  // fell back to its default -- the checks ran against the top of the screen
+  // whatever they asked for, and passed for the wrong reason.
+  debugMouseMove: (y) => ipcRenderer.invoke('debug:mouse-move', { y }),
   debugChromeState: () => ipcRenderer.invoke('debug:chrome-state'),
-  debugProbePointer: (x, y) => ipcRenderer.invoke('debug:probe-pointer', { x, y }),
+  debugProbePointer: (y, opts = {}) => ipcRenderer.invoke('debug:probe-pointer', { y, ...opts }),
 
   // The site surface covers the launcher, so the main process reports when a
   // site is open or closed and the toolbar swaps accordingly.

@@ -28,14 +28,15 @@ function report(y) {
 
 window.addEventListener('mousemove', (event) => report(event.clientY), { passive: true });
 
-// A touch drag has no hover, so treat movement as a request to show the bar.
+// Touch has no hover, so a drag is the only way to ask for the bar. Reported as
+// the top because there is no pointer position to report.
 window.addEventListener('touchmove', (event) => {
   const touch = event.touches && event.touches[0];
   if (touch) report(0);
 }, { passive: true });
 
-// Scroll gestures usually carry a pointer with them; report the top on any
-// input so the bar is reachable without moving the mouse.
-for (const type of ['scroll', 'keydown', 'touchstart']) {
-  window.addEventListener(type, () => report(0), { passive: true, capture: true });
-}
+// Scrolling and key presses deliberately do NOT reveal the bar. Reporting the
+// top for them made it appear with the pointer parked in the middle of the
+// screen, which is exactly the "it shows up when I am nowhere near the top"
+// behaviour. Escape still works for leaving a site, which is the case those
+// listeners were standing in for.

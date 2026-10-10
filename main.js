@@ -96,16 +96,17 @@ let lastPointerY = -1;
 /** How long the bar sits idle before hiding, and how near the top reveals it. */
 const AUTO_HIDE_MS = 1200;
 /**
- * Generous reveal band. A tight one feels unresponsive because the bar is already
- * gone by the time the pointer reaches the very top of the screen.
+ * Thin band at the very top. This is deliberately small: a wide one brings the
+ * bar back while the pointer is still well down the screen, which reads as the
+ * bar appearing at random rather than in response to a deliberate move upward.
  */
-const REVEAL_ZONE_PX = 200;
+const REVEAL_ZONE_PX = 40;
 /**
  * Hiding needs a wider band than revealing. Without the gap the bar flickers
  * when the pointer sits right on the boundary, because every mouse move toggles
  * it.
  */
-const HIDE_ZONE_PX = 300;
+const HIDE_ZONE_PX = 200;
 const BOUNDS_ANIM_MS = 280;
 
 /** Space the site view must leave at the top for the shared bar. */
@@ -577,19 +578,26 @@ if (process.env.TVL_DEBUG_INPUT === '1') {
   }));
   // Dispatches a genuine pointer move into the loaded page and reports whether
   // the preload picked it up, so the real path is checked rather than assumed.
-  ipcMain.handle('debug:probe-pointer', async (_e, { y = 10 } = {}) => {
+  ipcMain.handle('debug:probe-pointer', async (_e, { y = 10, scroll = false } = {}) => {
+    // `y` is validated here rather than defaulted silently: a missing position
+    // used to become 10, which made every check probe the very top of the
+    // screen no matter what it asked for.
     if (!siteView || siteView.webContents.isDestroyed()) return { ok: false };
     /*
      * Dispatches inside the page rather than through sendInputEvent. Injected
      * hardware-level input is not delivered to a window that lacks OS focus,
      * which made this check fail for reasons unrelated to the preload. A DOM
      * event still exercises the real chain: preload listener -> IPC -> handler.
+     *
+     * `scroll` dispatches a scroll instead of a move, so the check can prove
+     * that scrolling does not bring the bar back.
      */
     lastPointerY = -1;
+    const event = scroll
+      ? `window.dispatchEvent(new Event('scroll'))`
+      : `window.dispatchEvent(new MouseEvent('mousemove', { clientY: ${Number(y)} }))`;
     try {
-      await siteView.webContents.executeJavaScript(
-        `window.dispatchEvent(new MouseEvent('mousemove', { clientY: ${Number(y)} }))`,
-      );
+      await siteView.webContents.executeJavaScript(event);
     } catch (err) {
       return { ok: false, error: err.message };
     }
