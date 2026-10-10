@@ -82,10 +82,17 @@ let popupsAttempted = 0;
 let popupsOpenedExternally = 0;
 /**
  * How far the controls travel to leave the window. Only a distance now: the
- * controls float over the page rather than sitting above it, so this no longer
- * has to match any CSS height -- it just has to exceed the tallest one.
+ * controls float inside the strip rather than filling it, so this no longer has
+ * to match a CSS height -- it just has to exceed the tallest one.
  */
 const CHROME_TRAVEL_PX = 56;
+
+/**
+ * Height of the strip the site view leaves uncovered so the controls are
+ * visible at all. Must cover the pill (`.bar-site`) plus its margin; see
+ * launcher/style.css.
+ */
+const CHROME_STRIP_PX = 52;
 
 let mainWindow = null;
 let siteView = null;
@@ -114,12 +121,17 @@ const BOUNDS_ANIM_MS = 280;
 /**
  * Space the site view must leave at the top for the shared controls.
  *
- * None, since they became a small floating pair rather than a bar. The page
- * keeps the whole window, so bringing the controls back costs no layout shift at
- * all -- previously the page jumped down 56px every time they appeared.
+ * This cannot be zero. The site is a WebContentsView added as a child of the
+ * window, and a child view always paints above the window's own page, so
+ * anything drawn there is behind the site and cannot be seen or clicked. The
+ * controls only float *within* this strip; they are not a separate overlay.
+ *
+ * Removing this inset is what made the controls vanish entirely, while every
+ * geometry check still passed, because they were correctly positioned and
+ * simply covered.
  */
 function chromeInset() {
-  return 0;
+  return chromeVisible ? CHROME_STRIP_PX : 0;
 }
 
 function showChrome({ schedule = true } = {}) {

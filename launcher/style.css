@@ -82,22 +82,22 @@ body::before {
 }
 
 /*
- * Over a site the bar stops spanning the window. It becomes a compact floating
- * pair -- Back and Open in Brave -- sitting over the page instead of above it,
- * so the controls cost almost none of the screen while they are up. The site
- * view is no longer inset to make room for them.
+ * Over a site the bar stops spanning the window. It becomes a compact pair of
+ * controls floating in the top-right of the strip the site view leaves
+ * uncovered -- it cannot be a true overlay, because the site is a child view
+ * and always paints above this page.
  */
 .bar-site {
   position: absolute;
-  inset: 0 auto auto 0;
+  inset: 7px 14px auto auto;
   height: auto;
   width: auto;
-  padding: 7px;
+  padding: 6px;
   gap: 6px;
   border-radius: 999px;
-  background: rgba(8, 10, 14, 0.82);
+  background: rgba(8, 10, 14, 0.86);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.5);
   overflow: visible;
 }
 
@@ -118,13 +118,25 @@ body::before {
   background: transparent;
 }
 
-/*
- * Just the two controls. The page title was the third thing in here, and it is
- * the difference between a 200px pill and a 327px one for no benefit while the
- * controls are up -- the launcher already names the app you are opening.
- */
+/* Just the two controls; the page title only widened the pill. */
 .bar-site .site-title {
   display: none;
+}
+
+/* Icon-only button, sized to match the text buttons beside it. */
+.btn-icon {
+  display: grid;
+  place-items: center;
+  padding: 5px 9px;
+}
+
+.btn-icon svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
 }
 
 .search {

@@ -113,12 +113,21 @@ async function ensureSites() {
   if (!(backTop >= 0 && backTop < 60)) {
     return fail(`Back is not reachable after reveal (top=${backTop}px)`);
   }
-  // The controls float over the page, so revealing them must not move it: the
-  // site view keeps the whole window and there is no gap to fill.
-  if (!afterMove || afterMove.chromeOffset !== 0 || afterMove.viewTop !== 0) {
-    return fail(`revealing the controls disturbed the page (${JSON.stringify(afterMove)})`);
+  // The site is a child view and paints above this page, so the controls are
+  // only visible if the site view leaves their strip uncovered. With the inset
+  // removed they were correctly positioned and completely invisible -- every
+  // geometry check still passed, which is how that reached a release.
+  if (!afterMove || afterMove.chromeOffset !== 0) {
+    return fail(`revealing the controls did not take effect (${JSON.stringify(afterMove)})`);
   }
-  out.push('ok   Back is on screen and the page never shifted');
+  const strip = document.getElementById('bar').getBoundingClientRect();
+  if (!(afterMove.viewTop >= strip.bottom - 1)) {
+    return fail(
+      `the site view covers the controls (view starts at ${afterMove.viewTop}px, ` +
+        `controls end at ${Math.round(strip.bottom)}px) — they would be invisible`,
+    );
+  }
+  out.push('ok   Back is on screen and the site view leaves the controls uncovered');
 
   // Over a site the bar is a small floating pair, not a strip across the window.
   // It only covers a fraction of the page, and nothing is left behind when it
@@ -130,6 +139,10 @@ async function ensureSites() {
   }
   if (coverage > 0.06) {
     return fail(`the controls cover ${(coverage * 100).toFixed(1)}% of the window`);
+  }
+  // Top right, as asked, and clear of the rail on the left.
+  if (compact.right < window.innerWidth * 0.5) {
+    return fail(`the controls are not on the right (right edge at ${Math.round(compact.right)}px)`);
   }
   const visible = [...document.querySelectorAll('#bar button')].filter((b) => b.offsetParent !== null);
   if (visible.length !== 2) {
