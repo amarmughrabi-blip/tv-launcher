@@ -49,7 +49,7 @@ async function ensureSites() {
   // Park the pointer away from the top, otherwise the physical cursor's real
   // position decides whether the bar hides and the check is meaningless. This
   // has to happen after the site opens: there is no site view to target before.
-  const parked = await bridge.debugMouseMove(400, 500);
+  const parked = await bridge.debugMouseMove(500);
   if (!parked.ok) return fail('could not place the cursor away from the top');
 
   if (hidden()) return fail('bar hid immediately instead of staying reachable at first');
@@ -74,18 +74,17 @@ async function ensureSites() {
   out.push(`ok   site open at ${view.url}`);
 
   // --- moving the pointer near the top brings it back ------------------------
-  const revealed = await bridge.debugMouseMove(400, 10);
+  const revealed = await bridge.debugMouseMove(10);
   if (!revealed.ok) return fail('could not place the cursor near the top');
   await wait(700);
   const afterMove = await bridge.debugChromeState().catch(() => null);
   if (hidden()) {
     return fail(`pointer near the top did not restore the bar (state ${JSON.stringify(afterMove)})`);
   }
-  if (afterMove && afterMove.watching !== true) return fail('cursor watch is not running');
   out.push('ok   bar returns when the pointer nears the top');
 
   // And it must hide again once the pointer moves away from the top.
-  await bridge.debugMouseMove(400, 600);
+  await bridge.debugMouseMove(600);
   await wait(600);
   if (hidden()) return fail('bar vanished while the pointer was moving, before the delay');
   let rehid = false;
@@ -98,6 +97,23 @@ async function ensureSites() {
   }
   if (!rehid) return fail('bar did not hide again after the pointer moved away');
   out.push('ok   bar hides again when the pointer moves away');
+
+  // --- the preload must actually report from a real page --------------------
+  if (typeof bridge.debugProbePointer !== 'function') {
+    return fail('debug pointer probe missing — run with TVL_DEBUG_INPUT=1');
+  }
+  const probe = await bridge.debugProbePointer(200, 12);
+  if (!probe.ok) {
+    return fail(
+      'the site preload never reported a pointer event; reveal-on-hover would be dead',
+    );
+  }
+  out.push(`ok   site preload reports pointer height (${probe.lastPointerY}px)`);
+
+  // And it must have revealed the bar on its own.
+  await wait(400);
+  if (hidden()) return fail('a real pointer near the top did not reveal the bar');
+  out.push('ok   a real pointer move reveals the bar');
 
   // --- an icon can be changed through the file input -------------------------
   let editorTile = document.querySelector('.tile');

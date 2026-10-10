@@ -47,6 +47,7 @@ contextBridge.exposeInMainWorld('api', {
   // Present only when the app is started with TVL_DEBUG_INPUT=1.
   debugMouseMove: (x, y) => ipcRenderer.invoke('debug:mouse-move', { x, y }),
   debugChromeState: () => ipcRenderer.invoke('debug:chrome-state'),
+  debugProbePointer: (x, y) => ipcRenderer.invoke('debug:probe-pointer', { x, y }),
 
   // The site surface covers the launcher, so the main process reports when a
   // site is open or closed and the toolbar swaps accordingly.

@@ -17,7 +17,7 @@
 
 const path = require('node:path');
 const fs = require('node:fs');
-const { app, BrowserWindow, WebContentsView, ipcMain, protocol, net, shell, screen } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, protocol, net, shell } = require('electron');
 
 const store = require('./src/store');
 const icons = require('./src/icons');
@@ -44,6 +44,8 @@ let blocker = null;
 /** The bar auto-hides over a site, and the site then gets the whole window. */
 let chromeVisible = true;
 let chromeTimer = null;
+/** Last pointer height reported by the site preload; used by the debug hook. */
+let lastPointerY = -1;
 /** How long the bar sits idle before hiding, and how near the top reveals it. */
 const AUTO_HIDE_MS = 2200;
 const REVEAL_ZONE_PX = 90;
@@ -89,43 +91,19 @@ function cancelHideChrome() {
 /*
  * Pointer tracking for reveal-on-hover.
  *
- * The site view covers the whole window while the bar is hidden, so the
- * launcher page receives no pointer events and cannot reveal itself. Polling
- * the cursor in the main process is the reliable way to see it: Chromium's
- * before-input-event does not deliver pointer moves at all (verified — it
- * records nothing for an injected move), so an event-based approach silently
- * never fires.
+ * Two things that look like they should work, and do not:
+ *   - the launcher page gets no pointer events while the bar is hidden, because
+ *     the site view covers the whole window;
+ *   - screen.getCursorScreenPoint() reports (0, 0) permanently on this Wayland
+ *     session, so the reveal zone can never be entered.
+ *
+ * The pointer position therefore comes from a preload inside the loaded site.
  */
-let cursorTimer = null;
-/** Test-only override of the cursor position, in content coordinates. */
-let debugCursor = null;
-
-function cursorLocalToWindow() {
-  if (debugCursor) return debugCursor;
-  if (!mainWindow || mainWindow.isDestroyed()) return null;
-  const point = screen.getCursorScreenPoint();
-  const content = mainWindow.getContentBounds();
-  return { x: point.x - content.x, y: point.y - content.y, w: content.width, h: content.height };
-}
-
-function startCursorWatch() {
-  stopCursorWatch();
-  cursorTimer = setInterval(() => {
-    if (!siteView || !mainWindow || mainWindow.isDestroyed()) return;
-    const local = cursorLocalToWindow();
-    if (!local) return;
-
-    const nearTop =
-      local.y >= 0 && local.y < REVEAL_ZONE_PX && local.x >= 0 && local.x < (local.w ?? Infinity);
-
-    if (nearTop) showChrome();
-    else if (chromeVisible) scheduleHideChrome();
-  }, 150);
-}
-
-function stopCursorWatch() {
-  clearInterval(cursorTimer);
-  cursorTimer = null;
+function handleSitePointer(y) {
+  if (!siteView) return;
+  lastPointerY = y;
+  if (y < REVEAL_ZONE_PX) showChrome();
+  else if (chromeVisible) scheduleHideChrome();
 }
 
 function createWindow() {
@@ -160,6 +138,9 @@ function openSite(url) {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // Reports pointer height so the bar can be revealed while a site covers
+      // the window. See src/site-pointer-preload.js for why nothing else works.
+      preload: path.join(__dirname, 'src', 'site-pointer-preload.js'),
     },
   });
 
@@ -194,7 +175,6 @@ function openSite(url) {
 
   mainWindow.contentView.addChildView(view);
   siteView = view;
-  startCursorWatch();
   showChrome();
   view.webContents.loadURL(url).catch((err) => log(`load failed: ${err.message}`));
 
@@ -213,7 +193,6 @@ function destroySiteView() {
   if (!siteView) return;
   clearTimeout(chromeTimer);
   chromeTimer = null;
-  stopCursorWatch();
 
   // The window's 'closed' event nulls mainWindow before 'window-all-closed'
   // fires, so this can run with no window at all. Guard every use of it.
@@ -289,6 +268,8 @@ ipcMain.handle('favicon:get', async (_e, { url }) => {
   return `app-icon://favicon/${path.basename(file)}`;
 });
 
+ipcMain.on('site:pointer', (_e, { y } = {}) => handleSitePointer(Number(y) || 0));
+
 ipcMain.handle('site:open', (_e, { url }) => openSite(url));
 ipcMain.handle('site:back', () => {
   destroySiteView();
@@ -341,18 +322,25 @@ if (process.env.TVL_DEBUG_INPUT === '1') {
   // Position the cursor logically so the reveal logic can be exercised without
   // a physical pointer. Chromium delivers no pointer events to
   // before-input-event, so the poller is the only thing that can be driven.
-  ipcMain.handle('debug:mouse-move', (_e, { x = 10, y = 10 } = {}) => {
-    if (!siteView || siteView.webContents.isDestroyed()) return { ok: false };
-    const content = mainWindow.getContentBounds();
-    debugCursor = { x, y, w: content.width, h: content.height };
+  ipcMain.handle('debug:mouse-move', (_e, { y = 10 } = {}) => {
+    if (!siteView) return { ok: false };
+    handleSitePointer(y);
     return { ok: true };
   });
   ipcMain.handle('debug:chrome-state', () => ({
     visible: chromeVisible,
     hasSite: Boolean(siteView),
-    watching: Boolean(cursorTimer),
-    cursor: debugCursor,
+    lastPointerY,
   }));
+  // Dispatches a genuine pointer move into the loaded page and reports whether
+  // the preload picked it up, so the real path is checked rather than assumed.
+  ipcMain.handle('debug:probe-pointer', async (_e, { y = 10 } = {}) => {
+    if (!siteView || siteView.webContents.isDestroyed()) return { ok: false };
+    lastPointerY = -1;
+    siteView.webContents.sendInputEvent({ type: 'mouseMove', x: 200, y });
+    await new Promise((r) => setTimeout(r, 400));
+    return { ok: lastPointerY !== -1, lastPointerY };
+  });
 }
 
 /**
