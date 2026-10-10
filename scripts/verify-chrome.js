@@ -95,6 +95,33 @@ async function ensureSites() {
   }
   out.push(`ok   Back is on screen and the page made room for it`);
 
+  // Every visible control has to be fully inside the bar and inside the window.
+  // A label that wraps in a narrow window used to grow the row past the bar's
+  // height, lifting Back above the top edge where it could not be clicked --
+  // the "I cannot leave the site" symptom, from a different cause.
+  const barBox = document.getElementById('bar').getBoundingClientRect();
+  const escaped = [...document.querySelectorAll('#bar button')]
+    .filter((b) => b.offsetParent !== null)
+    .map((b) => ({
+      id: b.id,
+      top: Math.round(b.getBoundingClientRect().top),
+      bottom: Math.round(b.getBoundingClientRect().bottom),
+    }))
+    .filter((b) => b.top < 0 || b.bottom > Math.ceil(barBox.bottom) + 1);
+  if (escaped.length) {
+    return fail(`bar controls overflow the bar: ${JSON.stringify(escaped)} (bar 0..${Math.round(barBox.bottom)})`);
+  }
+  const tallest = Math.max(
+    0,
+    ...[...document.querySelectorAll('#bar button')]
+      .filter((b) => b.offsetParent !== null)
+      .map((b) => b.getBoundingClientRect().height),
+  );
+  if (tallest > barBox.height + 1) {
+    return fail(`a bar control is ${Math.round(tallest)}px tall in a ${Math.round(barBox.height)}px bar`);
+  }
+  out.push('ok   no bar control overflows the bar');
+
   // And it must hide again once the pointer moves away from the top. Bounded
   // rather than tied to the idle constant, since the countdown starts when the
   // bar was revealed, not when the pointer left.

@@ -248,6 +248,24 @@ function createWindow() {
   });
 
   win.loadFile(path.join(__dirname, 'launcher', 'index.html'));
+
+  // The launcher is a fixed-layout TV surface, so a zoom level makes no sense
+  // for it. Chromium persists per-host zoom in the profile, which means a zoom
+  // set once -- by a stray keypress, or by a debugging aid -- silently survives
+  // every restart and leaves the whole UI enormous with no visible cause.
+  // Reset it on load and keep it from being stored.
+  win.webContents.on('did-finish-load', () => {
+    if (win.webContents.getZoomFactor() !== 1) {
+      log(`reset launcher zoom ${win.webContents.getZoomFactor()} -> 1`);
+      win.webContents.setZoomFactor(1);
+    }
+    win.webContents.setZoomLevel(0);
+  });
+  win.webContents.on('zoom-changed', (_event, direction) => {
+    if (direction === 'reset') return;
+    win.webContents.setZoomLevel(0);
+  });
+
   win.on('closed', () => {
     mainWindow = null;
   });
@@ -614,6 +632,7 @@ app.on('second-instance', () => {
 
 if (isPrimary) app.whenReady().then(async () => {
   paths.ensure();
+  favicons.pruneCache();
   protocol.handle('app-icon', (request) => {
     // basename() strips any directory component, so the name is a single
     // segment before it is joined onto a known root.

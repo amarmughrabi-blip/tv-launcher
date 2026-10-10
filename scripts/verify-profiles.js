@@ -38,8 +38,22 @@ async function waitForPicker() {
   if (!add.classList.contains('picker-add')) return fail('no Add Profile tile at the end');
   out.push('ok   Add Profile tile is present');
 
-  if (!picker().hidden && picker().getBoundingClientRect().width < 400) {
-    return fail('picker is not full screen');
+  // "Full screen" means covering the window, not being a particular size. The
+  // check used to demand 400px, which fails on a window narrower than that --
+  // reporting a broken picker when it was covering the viewport exactly.
+  if (!picker().hidden) {
+    const box = picker().getBoundingClientRect();
+    const covers =
+      box.width >= window.innerWidth - 1 &&
+      box.height >= window.innerHeight - 1 &&
+      box.top <= 1 &&
+      box.left <= 1;
+    if (!covers) {
+      return fail(
+        `picker does not cover the window (${Math.round(box.width)}x${Math.round(box.height)} ` +
+          `at ${Math.round(box.left)},${Math.round(box.top)} in ${window.innerWidth}x${window.innerHeight})`,
+      );
+    }
   }
   out.push('ok   picker covers the window');
 
