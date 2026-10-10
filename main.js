@@ -17,8 +17,9 @@
 
 const path = require('node:path');
 const fs = require('node:fs');
-const { app, BrowserWindow, WebContentsView, ipcMain, protocol, net, shell } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, protocol, net, shell, webContents } = require('electron');
 
+const { GUARD: POPUNDER_GUARD } = require('./src/popunder-guard');
 const store = require('./src/store');
 const icons = require('./src/icons');
 const favicons = require('./src/favicons');
@@ -351,6 +352,15 @@ function openSite(url) {
   // the page replacing its own document.
   const applyCosmetics = async () => {
     if (siteView !== view || view.webContents.isDestroyed()) return;
+
+    // Re-arm the pop-under guard. The preload gets there first, but a page that
+    // redefines window.open after load would otherwise get a working one back.
+    try {
+      await view.webContents.executeJavaScript(POPUNDER_GUARD);
+    } catch (err) {
+      log(`pop-under guard not armed: ${err.message}`);
+    }
+
     if (!blocker || !blocker.ready) return;
     const current = view.webContents.getURL();
     if (!current || !current.startsWith('http')) return;
@@ -543,7 +553,31 @@ if (process.env.TVL_DEBUG_INPUT === '1') {
     applied: cosmeticsApplied,
   }));
 
+  ipcMain.handle('debug:blocker', () => (blocker ? blocker.summary : null));
+
+  // sendInputEvent produces a trusted event with user activation, which is what
+  // pop-under code gates on. Synthetic DOM events never carry it, so a scripted
+  // probe cannot reproduce a pop-under.
+  ipcMain.handle('debug:real-click', async (_e, { x = 550, y = 400 } = {}) => {
+    if (!siteView || siteView.webContents.isDestroyed()) return { ok: false };
+    const wc = siteView.webContents;
+    wc.sendInputEvent({ type: 'mouseMove', x, y });
+    wc.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 });
+    wc.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 });
+    return { ok: true };
+  });
+
   ipcMain.handle('debug:popups', () => ({ attempted: popupsAttempted }));
+
+  // Every live webContents, so a check can prove the site did not spawn a
+  // window of its own behind the launcher's back.
+  ipcMain.handle('debug:windows', () => {
+    const all = webContents.getAllWebContents();
+    return all.map((w) => ({
+      type: w.getType(),
+      url: w.getURL().slice(0, 80),
+    }));
+  });
 
   // Run script inside the site view. The live ad checks need to act on the
   // loaded page itself; probing from the launcher would exercise the wrong

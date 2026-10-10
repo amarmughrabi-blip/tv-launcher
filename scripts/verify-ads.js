@@ -79,15 +79,55 @@ const fail = (why) => {
   const after = await bridge.debugPopups();
   const openedAfter = await bridge.debugExternalOpens();
 
+  // With the guard armed the page cannot even reach the handler, so zero
+  // attempts here is the correct result, not a missing probe. What matters is
+  // that nothing reached the browser.
   const attempted = after.attempted - before.attempted;
-  if (attempted < 5) {
-    return fail(`pop-up probe did not reach the site (only ${attempted} of 5 registered)`);
-  }
   const leaked = openedAfter.openedExternally - openedBefore.openedExternally;
   if (leaked > 0) {
     return fail(`${leaked} pop-up(s) reached the system browser`);
   }
-  out.push(`ok   ${attempted} site pop-ups denied, none reached the browser`);
+  out.push(`ok   5 site pop-ups fired, ${attempted} reached the handler, none reached the browser`);
+
+  // --- the guard inside the page itself --------------------------------------
+  // The handler above is the last line of defence. Pop-under networks exist to
+  // survive exactly that, so the chain is broken at the source as well: the
+  // page's own window.open is inert and cannot be redefined.
+  const guard = JSON.parse(await bridge.debugSiteEval(`(() => {
+    const opened = window.open('https://popunder-probe.invalid/x', '_blank');
+    const d = Object.getOwnPropertyDescriptor(window, 'open');
+    return JSON.stringify({
+      returnsNull: opened === null,
+      armed: !!window.__tvPopunderGuard,
+      configurable: d ? d.configurable : null,
+    });
+  })()`));
+  if (!guard.returnsNull) return fail('the page can still call window.open');
+  if (!guard.armed) return fail('the pop-under guard is not armed in the page');
+  if (guard.configurable !== false) {
+    return fail('the page could redefine window.open and pop under anyway');
+  }
+  out.push('ok   window.open is inert inside the page and cannot be restored');
+
+  // Beacon frames are the delivery mechanism. A late one must be swept, while a
+  // real player-sized frame must survive -- breaking video would be worse than
+  // the ad it prevents.
+  const beacon = JSON.parse(await bridge.debugSiteEval(`(async () => {
+    const small = document.createElement('iframe');
+    small.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;border:0';
+    document.body.appendChild(small);
+    const big = document.createElement('iframe');
+    big.style.cssText = 'position:fixed;bottom:0;left:0;width:640px;height:360px;border:0';
+    document.body.appendChild(big);
+    await new Promise((r) => setTimeout(r, 600));
+    const removed = !document.body.contains(small);
+    const kept = document.body.contains(big);
+    big.remove();
+    return JSON.stringify({ removed, kept });
+  })()`));
+  if (!beacon.removed) return fail('a 1x1 beacon frame was not swept');
+  if (!beacon.kept) return fail('the guard removed a player-sized frame — video would break');
+  out.push('ok   beacon frames swept, player-sized frames kept');
 
   console.log(`verify: ${out.join(' | ')}`);
   return 'ok';

@@ -50,6 +50,9 @@ contextBridge.exposeInMainWorld('api', {
   chromeHover: (hovering) => ipcRenderer.invoke('chrome:hover', hovering),
   debugSiteEval: (code) => ipcRenderer.invoke('debug:site-eval', { code }),
   debugExternalOpens: () => ipcRenderer.invoke('debug:external-opens'),
+  debugWindows: () => ipcRenderer.invoke('debug:windows'),
+  debugBlocker: () => ipcRenderer.invoke('debug:blocker'),
+  debugRealClick: (x, y) => ipcRenderer.invoke('debug:real-click', { x, y }),
   debugPopups: () => ipcRenderer.invoke('debug:popups'),
   debugCosmetics: () => ipcRenderer.invoke('debug:cosmetics'),
   onChromeVisible: (fn) => {
