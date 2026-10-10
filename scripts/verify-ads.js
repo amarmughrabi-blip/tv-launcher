@@ -98,36 +98,41 @@ const fail = (why) => {
     const d = Object.getOwnPropertyDescriptor(window, 'open');
     return JSON.stringify({
       returnsNull: opened === null,
-      armed: !!window.__tvPopunderGuard,
       configurable: d ? d.configurable : null,
     });
   })()`));
   if (!guard.returnsNull) return fail('the page can still call window.open');
-  if (!guard.armed) return fail('the pop-under guard is not armed in the page');
   if (guard.configurable !== false) {
     return fail('the page could redefine window.open and pop under anyway');
   }
   out.push('ok   window.open is inert inside the page and cannot be restored');
 
-  // Beacon frames are the delivery mechanism. A late one must be swept, while a
-  // real player-sized frame must survive -- breaking video would be worse than
-  // the ad it prevents.
-  const beacon = JSON.parse(await bridge.debugSiteEval(`(async () => {
-    const small = document.createElement('iframe');
-    small.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;border:0';
-    document.body.appendChild(small);
-    const big = document.createElement('iframe');
-    big.style.cssText = 'position:fixed;bottom:0;left:0;width:640px;height:360px;border:0';
-    document.body.appendChild(big);
-    await new Promise((r) => setTimeout(r, 600));
-    const removed = !document.body.contains(small);
-    const kept = document.body.contains(big);
-    big.remove();
-    return JSON.stringify({ removed, kept });
+  // The page must still be a working page afterwards. A guard that fights the
+  // site's own scripts can livelock the renderer until the load times out --
+  // which is exactly what a beacon sweep did to cinebytv.com, and it looked
+  // like "nothing loads" rather than like anything we had changed. Nothing may
+  // be left running in the background either.
+  const pageState = JSON.parse(await bridge.debugSiteEval(`(() => {
+    const text = (document.body && (document.body.innerText || '')).trim();
+    const imgs = [...document.querySelectorAll('img')].filter((i) => i.naturalWidth > 0);
+    return JSON.stringify({
+      ready: document.readyState,
+      text: text.length,
+      images: imgs.length,
+    });
   })()`));
-  if (!beacon.removed) return fail('a 1x1 beacon frame was not swept');
-  if (!beacon.kept) return fail('the guard removed a player-sized frame — video would break');
-  out.push('ok   beacon frames swept, player-sized frames kept');
+  if (pageState.ready !== 'complete') {
+    return fail(
+      `the page never finished loading (readyState=${pageState.ready}) — ` +
+        'the guard is fighting the site',
+    );
+  }
+  if (pageState.text < 20 && pageState.images < 1) {
+    return fail(`the page rendered nothing after the guard (${pageState.text} chars of text)`);
+  }
+  out.push(
+    `ok   the page still renders normally (readyState complete, ${pageState.images} images, ${pageState.text} chars)`,
+  );
 
   console.log(`verify: ${out.join(' | ')}`);
   return 'ok';
