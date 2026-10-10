@@ -81,10 +81,11 @@ let cosmeticsApplied = 0;
 let popupsAttempted = 0;
 let popupsOpenedExternally = 0;
 /**
- * Height of the shared bar. Must match `.bar { height }` in launcher/style.css
- * or the site view leaves a gap the bar does not fill.
+ * How far the controls travel to leave the window. Only a distance now: the
+ * controls float over the page rather than sitting above it, so this no longer
+ * has to match any CSS height -- it just has to exceed the tallest one.
  */
-const TOOLBAR_H = 56;
+const CHROME_TRAVEL_PX = 56;
 
 let mainWindow = null;
 let siteView = null;
@@ -110,9 +111,15 @@ const REVEAL_ZONE_PX = 40;
 const HIDE_ZONE_PX = 200;
 const BOUNDS_ANIM_MS = 280;
 
-/** Space the site view must leave at the top for the shared bar. */
+/**
+ * Space the site view must leave at the top for the shared controls.
+ *
+ * None, since they became a small floating pair rather than a bar. The page
+ * keeps the whole window, so bringing the controls back costs no layout shift at
+ * all -- previously the page jumped down 56px every time they appeared.
+ */
 function chromeInset() {
-  return chromeVisible ? TOOLBAR_H : 0;
+  return 0;
 }
 
 function showChrome({ schedule = true } = {}) {
@@ -204,7 +211,7 @@ function applyChromeOffset() {
 function trackViewBounds({ animate = true } = {}) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const target = chromeInset();
-  const targetOffset = chromeVisible ? 0 : -TOOLBAR_H;
+  const targetOffset = chromeVisible ? 0 : -CHROME_TRAVEL_PX;
   const from = viewTop;
   const fromOffset = chromeOffset;
 

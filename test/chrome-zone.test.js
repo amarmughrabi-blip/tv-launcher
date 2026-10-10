@@ -35,11 +35,12 @@ test('the reveal band is a thin strip at the top', () => {
   );
 });
 
-test('the bar is about as tall as the reveal band', () => {
-  // A band far taller than the bar looks like a bar that follows the pointer.
-  const reveal = constant(mainSrc, 'REVEAL_ZONE_PX');
-  const bar = constant(mainSrc, 'TOOLBAR_H');
-  assert.ok(reveal >= bar / 2, `reveal band (${reveal}px) is thin even for a ${bar}px bar`);
+test('the controls travel far enough to clear the window', () => {
+  // The controls are a floating pair now, so this is only a travel distance and
+  // no longer has to match a CSS height -- but it must exceed the tallest one,
+  // or a sliver of them stays on screen when hidden.
+  const travel = constant(mainSrc, 'CHROME_TRAVEL_PX');
+  assert.ok(travel >= 45, `travel distance ${travel}px would leave part of the controls visible`);
 });
 
 test('hiding needs a wider band than revealing, so the bar cannot flicker', () => {

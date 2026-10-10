@@ -44,6 +44,7 @@ async function ensureSites() {
   }
 
   tile.click();
+  const openedAt = performance.now();
   await wait(600);
 
   // Park the pointer away from the top, otherwise the physical cursor's real
@@ -52,20 +53,31 @@ async function ensureSites() {
   const parked = await bridge.debugMouseMove(400);
   if (!parked.ok) return fail('could not place the cursor away from the top');
 
-  if (hidden()) return fail('bar hid immediately instead of staying reachable at first');
+  // Measured against the clock, not against the sleeps above. Those are lower
+  // bounds: on a loaded machine a wait(600) can take well over a second, by
+  // which point the bar has auto-hidden and this reports a failure that never
+  // happened. AUTO_HIDE_MS is the app's own delay.
+  const AUTO_HIDE_MS = 1200;
+  const elapsed = performance.now() - openedAt;
+  if (hidden()) {
+    if (elapsed < AUTO_HIDE_MS) {
+      return fail(`bar hid after only ${Math.round(elapsed)}ms, sooner than the ${AUTO_HIDE_MS}ms delay`);
+    }
+    out.push(`ok   bar auto-hid after ${Math.round(elapsed)}ms (loaded machine)`);
+  }
 
   // Past the auto-hide delay it should be gone. Bounded, not a fixed sleep.
-  let hidBy = 0;
-  for (let i = 0; i < 40; i += 1) {
+  let hidBy = hidden() ? Math.round(elapsed) : 0;
+  for (let i = 0; i < 40 && !hidBy; i += 1) {
     await wait(150);
-    if (hidden()) {
-      hidBy = 600 + (i + 1) * 150;
-      break;
-    }
+    if (hidden()) hidBy = Math.round(performance.now() - openedAt);
   }
   if (!hidBy) {
     const state = await bridge.debugChromeState().catch((e) => ({ err: e.message }));
     return fail(`bar did not auto-hide over the site (state ${JSON.stringify(state)})`);
+  }
+  if (hidBy < AUTO_HIDE_MS) {
+    return fail(`bar auto-hid after ${hidBy}ms, sooner than the ${AUTO_HIDE_MS}ms delay`);
   }
   out.push(`ok   bar auto-hides over a site (after ${hidBy}ms)`);
 
@@ -101,10 +113,35 @@ async function ensureSites() {
   if (!(backTop >= 0 && backTop < 60)) {
     return fail(`Back is not reachable after reveal (top=${backTop}px)`);
   }
-  if (!afterMove || afterMove.chromeOffset !== 0 || afterMove.viewTop <= 0) {
-    return fail(`geometry did not follow the reveal (${JSON.stringify(afterMove)})`);
+  // The controls float over the page, so revealing them must not move it: the
+  // site view keeps the whole window and there is no gap to fill.
+  if (!afterMove || afterMove.chromeOffset !== 0 || afterMove.viewTop !== 0) {
+    return fail(`revealing the controls disturbed the page (${JSON.stringify(afterMove)})`);
   }
-  out.push(`ok   Back is on screen and the page made room for it`);
+  out.push('ok   Back is on screen and the page never shifted');
+
+  // Over a site the bar is a small floating pair, not a strip across the window.
+  // It only covers a fraction of the page, and nothing is left behind when it
+  // goes -- the point of the change, so it is asserted rather than assumed.
+  const compact = document.getElementById('bar').getBoundingClientRect();
+  const coverage = (compact.width * compact.height) / (window.innerWidth * window.innerHeight);
+  if (compact.width > window.innerWidth * 0.5) {
+    return fail(`the controls still span the window (${Math.round(compact.width)}px wide)`);
+  }
+  if (coverage > 0.06) {
+    return fail(`the controls cover ${(coverage * 100).toFixed(1)}% of the window`);
+  }
+  const visible = [...document.querySelectorAll('#bar button')].filter((b) => b.offsetParent !== null);
+  if (visible.length !== 2) {
+    return fail(`expected exactly Back and Open in Brave over a site, saw ${visible.length}`);
+  }
+  const stray = [...document.querySelectorAll('#bar .site-title')].filter(
+    (n) => getComputedStyle(n).display !== 'none',
+  );
+  if (stray.length) return fail('the page title is still in the floating controls');
+  out.push(
+    `ok   controls are a compact pair (${Math.round(compact.width)}x${Math.round(compact.height)}, ${(coverage * 100).toFixed(1)}% of the window)`,
+  );
 
   // Every visible control has to be fully inside the bar and inside the window.
   // A label that wraps in a narrow window used to grow the row past the bar's

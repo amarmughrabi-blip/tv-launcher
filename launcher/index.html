@@ -10,8 +10,10 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <!-- One bar, two states. It stays visible because the site view is inset
-         below it, and slides away over a site so the page fills the window. -->
+    <!-- One bar, two shapes. On the launcher it spans the window with the
+         search and tabs. Over a site it shrinks to a small floating pair of
+         controls (bar-site) that sits on top of the page, so revealing them
+         never covers it or shifts it. -->
     <header class="bar" id="bar">
       <button id="back" class="btn btn-ghost" hidden>&larr; Back</button>
       <input

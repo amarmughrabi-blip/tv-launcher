@@ -344,6 +344,9 @@ function setBarMode(mode, title = '') {
   el.back.hidden = !siteOpen;
   el.siteTitle.hidden = !siteOpen;
   el.siteTitle.textContent = title;
+  // Over a site the bar stops being a bar: it becomes a small floating pair of
+  // controls, so it covers almost none of the page while it is up.
+  el.bar.classList.toggle('bar-site', siteOpen);
 }
 
 /*
