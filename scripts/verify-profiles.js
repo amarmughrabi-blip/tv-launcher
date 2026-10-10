@@ -68,14 +68,38 @@ async function waitForPicker() {
   await wait(1600);
 
   if (!picker().hidden) return fail('picker did not close after choosing a profile');
+  // The attribute alone is not enough: the picker rule sets display:flex, which
+  // silently defeats `hidden`. This is what left it painted over the launcher.
+  if (getComputedStyle(picker()).display !== 'none') {
+    return fail(
+      `picker is still displayed (${getComputedStyle(picker()).display}) despite being hidden`,
+    );
+  }
+  if (!document.querySelector('.rail')) return fail('the launcher rail did not come back');
   if (labels().length !== 0) return fail(`a new profile must be empty, saw ${labels().join()}`);
-  out.push('ok   choosing a profile opens it empty');
+  // The banner stays hidden on an empty profile -- there is nothing to present
+  // -- so it is checked below, once this profile has an app.
+  out.push('ok   choosing a profile opens it empty, on the TV launcher');
+
+  // --- and there is a way back to the picker -------------------------------
+  document.getElementById('rail-profiles').click();
+  await wait(700);
+  if (picker().hidden || getComputedStyle(picker()).display === 'none') {
+    return fail('the rail button did not bring the picker back');
+  }
+  out.push('ok   the rail brings the picker back');
+  hidePicker();
+  await wait(400);
 
   // --- profiles stay separate ----------------------------------------------
   await bridge.addSite('cinebytv.com', 'Cineby', null);
   await window.load();
   await wait(1300);
   if (!labels().includes('Cineby')) return fail('could not add to the new profile');
+  if (!document.querySelector('.hero:not([hidden])')) {
+    return fail('the launcher banner did not come back once the profile had an app');
+  }
+  out.push('ok   the banner presents the profile’s app');
 
   showPicker();
   await wait(600);

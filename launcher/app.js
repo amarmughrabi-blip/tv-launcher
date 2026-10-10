@@ -13,6 +13,7 @@ const bridge = window.api;
 const el = {
   bar: document.getElementById('bar'),
   railAdd: document.getElementById('rail-add'),
+  railProfiles: document.getElementById('rail-profiles'),
   stage: document.querySelector('.stage'),
   picker: document.getElementById('picker'),
   pickerGrid: document.getElementById('picker-grid'),
@@ -707,6 +708,9 @@ async function deleteProfileFromPicker(profile) {
 }
 
 el.pickerManage.addEventListener('click', () => showPicker({ manage: true }));
+
+// The way back to the picker once inside a profile.
+el.railProfiles.addEventListener('click', () => showPicker());
 
 /* ---------------------------- profile dialog --------------------------- */
 

@@ -17,6 +17,16 @@
   box-sizing: border-box;
 }
 
+/*
+ * The `hidden` attribute only works through the UA stylesheet's display:none.
+ * Any rule that sets display on an element that also uses `hidden` silently
+ * defeats it -- which is exactly how the profile picker stayed painted on top
+ * of the launcher after a profile was chosen. Reset it once, globally.
+ */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   height: 100%;
