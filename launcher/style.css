@@ -1,14 +1,15 @@
-/* TV-style launcher: a dark room, a wall of tiles, one thing obviously selected. */
+/* TV-style launcher: deep backdrop, horizontal rows, one thing clearly selected. */
 
 :root {
-  --bg: #0b0d12;
-  --tile: #181c25;
-  --tile-hover: #222836;
-  --text: #e8ecf4;
-  --muted: #8d97ab;
+  --bg: #07080d;
+  --tile: #161a24;
+  --tile-hover: #1f2432;
+  --text: #eef1f7;
+  --muted: #8b95aa;
   --accent: #4c8dff;
-  --danger: #e5534b;
-  --radius: 14px;
+  /* Driven from the focused tile so the room's colour follows your selection. */
+  --glow-hue: 218;
+  --ease: cubic-bezier(0.22, 0.9, 0.24, 1);
 }
 
 * {
@@ -22,35 +23,70 @@ body {
 
 body {
   margin: 0;
-  background: radial-gradient(1200px 700px at 50% -10%, #1a2030 0%, var(--bg) 60%);
+  background: var(--bg);
   color: var(--text);
   font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   user-select: none;
+  transition: background 0.6s var(--ease);
+}
+
+/* Ambient wash behind everything, tinted by whatever is selected. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(900px 520px at 22% -8%, hsl(var(--glow-hue) 70% 45% / 0.22), transparent 65%),
+    radial-gradient(760px 460px at 82% 108%, hsl(calc(var(--glow-hue) + 42) 65% 40% / 0.18), transparent 62%),
+    radial-gradient(1200px 700px at 50% 42%, #0d1119 0%, var(--bg) 70%);
+  transition: background 0.75s var(--ease);
 }
 
 /* ---------------- top bar ---------------- */
 
 .bar {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  padding: 0 26px;
-  height: 52px;
-  flex: none;
   position: relative;
-  z-index: 2;
-  background: linear-gradient(to bottom, rgba(11, 13, 18, 0.97), rgba(11, 13, 18, 0.86));
-  transition: transform 0.22s ease, opacity 0.22s ease;
+  z-index: 3;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  height: 56px;
+  padding: 0 34px;
+  flex: none;
+  background: linear-gradient(to bottom, rgba(7, 8, 13, 0.96), rgba(7, 8, 13, 0.72) 70%, transparent);
+  transition: transform 0.3s var(--ease), opacity 0.3s var(--ease);
 }
 
-/* Auto-hidden in site mode so the page gets the whole window. */
 .bar-hidden {
   transform: translateY(-100%);
   opacity: 0;
   pointer-events: none;
+}
+
+.search {
+  width: 260px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 999px;
+  color: var(--text);
+  font: inherit;
+  padding: 9px 18px;
+  outline: none;
+  transition: border-color 0.25s var(--ease), background 0.25s var(--ease);
+}
+
+.search::placeholder {
+  color: var(--muted);
+}
+
+.search:focus {
+  border-color: hsl(var(--glow-hue) 90% 62%);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .site-title {
@@ -61,52 +97,39 @@ body {
   white-space: nowrap;
 }
 
-.search {
-  flex: 1;
-  max-width: 420px;
-  background: var(--tile);
-  border: 1px solid #262d3b;
-  border-radius: 999px;
-  color: var(--text);
-  font: inherit;
-  padding: 10px 18px;
-  outline: none;
-}
-
-.search:focus {
-  border-color: var(--accent);
-}
-
 .bar-actions {
   margin-left: auto;
   display: flex;
-  gap: 8px;
+  gap: 10px;
 }
 
 /* ---------------- buttons ---------------- */
 
 .btn {
-  background: var(--tile);
-  border: 1px solid #262d3b;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   color: var(--text);
   font: inherit;
-  padding: 9px 16px;
+  padding: 9px 18px;
   border-radius: 999px;
   cursor: pointer;
+  transition: background 0.2s var(--ease), transform 0.2s var(--ease), border-color 0.2s var(--ease);
 }
 
 .btn:hover {
-  background: var(--tile-hover);
+  background: rgba(255, 255, 255, 0.12);
+  transform: translateY(-1px);
 }
 
 .btn:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline: none;
+  border-color: hsl(var(--glow-hue) 90% 62%);
+  box-shadow: 0 0 0 3px hsl(var(--glow-hue) 90% 62% / 0.28);
 }
 
 .btn-primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: hsl(var(--glow-hue) 85% 58%);
+  border-color: transparent;
   color: #fff;
 }
 
@@ -117,74 +140,207 @@ body {
 .btn-danger {
   background: transparent;
   border-color: #4a2a2a;
-  color: var(--danger);
+  color: #e5534b;
 }
 
 .btn-small {
-  padding: 6px 12px;
+  padding: 6px 13px;
   font-size: 13px;
 }
 
-/* ---------------- the wall of tiles ---------------- */
+/* ---------------- hero ---------------- */
 
-.grid {
-  flex: 1;
-  overflow-y: auto;
-  padding: 18px 26px 40px;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
-  gap: 18px;
-  align-content: start;
+.hero {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 30px 34px 8px;
 }
 
+.hero-icon {
+  width: 96px;
+  height: 96px;
+  border-radius: 22px;
+  object-fit: contain;
+  background: rgba(255, 255, 255, 0.94);
+  padding: 10px;
+  box-shadow:
+    0 16px 40px hsl(var(--glow-hue) 80% 12% / 0.7),
+    0 0 40px hsl(var(--glow-hue) 90% 55% / 0.35);
+  transition: box-shadow 0.4s var(--ease);
+}
+
+.hero-badge {
+  display: grid;
+  place-items: center;
+  font-size: 42px;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
+}
+
+.hero-text {
+  min-width: 0;
+}
+
+.hero-label {
+  margin: 0;
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hero-host {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.hero-hint {
+  margin-left: auto;
+  align-self: flex-end;
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  opacity: 0.75;
+}
+
+/* ---------------- rows ---------------- */
+
+.grid {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px 0 46px;
+  scrollbar-width: none;
+  /* Centre the rows when there are only a few, so the screen does not read as
+     empty, while still scrolling once they overflow. */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.grid::-webkit-scrollbar {
+  display: none;
+}
+
+/*
+ * No entrance animation here on purpose. An animation with fill-mode `both`
+ * pins an element at its `from` state whenever Chromium throttles animations,
+ * which it does whenever the window is not focused -- and a launcher that is
+ * blank until you click it is far worse than one that simply appears. The
+ * motion that matters is on hover, focus, and the ambient tint, all of which
+ * are transitions between two visible states.
+ */
+.row {
+  margin-bottom: 30px;
+}
+
+.row-label {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 12px 34px;
+}
+
+.row-track {
+  display: flex;
+  gap: 20px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  padding: 14px 34px 20px;
+  scrollbar-width: none;
+}
+
+.row-track::-webkit-scrollbar {
+  display: none;
+}
+
+/* ---------------- tiles ---------------- */
+
 .tile {
+  position: relative;
+  flex: 0 0 auto;
+  width: 148px;
+  scroll-snap-align: center;
   background: var(--tile);
-  border: 1px solid transparent;
-  border-radius: var(--radius);
-  padding: 20px 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 18px;
+  padding: 22px 12px 14px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   cursor: pointer;
-  position: relative;
-  transition: background 0.12s ease, transform 0.12s ease;
+  outline: none;
+  transition:
+    transform 0.32s var(--ease),
+    background 0.32s var(--ease),
+    border-color 0.32s var(--ease),
+    box-shadow 0.32s var(--ease);
 }
 
 .tile:hover {
   background: var(--tile-hover);
+  transform: translateY(-4px);
 }
 
-/* Keyboard focus is the primary input on a TV, so it has to be obvious. */
-.tile:focus {
-  outline: none;
+/* The selection is the loudest thing on screen, the way a TV remote behaves.
+   Driven by an explicit class as well as :focus, because the window does not
+   always hold OS focus and :focus alone then renders nothing. */
+.tile:focus,
+.tile.is-selected {
   background: var(--tile-hover);
-  border-color: var(--accent);
+  border-color: hsl(var(--glow-hue) 95% 72%);
+  transform: scale(1.12) translateY(-8px);
+  box-shadow:
+    0 26px 60px hsl(var(--glow-hue) 85% 10% / 0.85),
+    0 0 0 3px hsl(var(--glow-hue) 95% 66% / 0.9),
+    0 0 58px hsl(var(--glow-hue) 95% 60% / 0.5);
+  z-index: 2;
+}
+
+.tile:focus-visible {
+  outline: none;
+}
+
+.tile:focus .tile-icon,
+.tile.is-selected .tile-icon {
   transform: scale(1.06);
-  box-shadow: 0 8px 30px rgba(76, 141, 255, 0.22);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
 }
 
 .tile-icon {
-  width: 56px;
-  height: 56px;
-  border-radius: 12px;
+  width: 68px;
+  height: 68px;
+  border-radius: 16px;
   object-fit: contain;
-  /* Light enough that dark favicons (GitHub, for one) stay legible against it. */
-  background: #e8ecf4;
-  padding: 6px;
+  /* Light enough that dark favicons stay legible against it. */
+  background: rgba(255, 255, 255, 0.92);
+  padding: 7px;
+  transition: transform 0.32s var(--ease), box-shadow 0.32s var(--ease);
 }
 
-/* No favicon and no custom icon: show the first letter instead. */
 .badge {
-  width: 56px;
-  height: 56px;
-  border-radius: 12px;
+  width: 68px;
+  height: 68px;
+  border-radius: 16px;
   display: grid;
   place-items: center;
-  font-size: 24px;
+  font-size: 30px;
   font-weight: 600;
   color: #fff;
-  background: linear-gradient(140deg, #3b6fd4, #6b4fd0);
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.28);
+  background: linear-gradient(140deg, hsl(var(--glow-hue) 58% 52%), hsl(calc(var(--glow-hue) + 38) 55% 42%));
 }
 
 .tile-label {
@@ -194,61 +350,74 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--muted);
+  transition: color 0.3s var(--ease);
+}
+
+.tile:focus .tile-label {
+  color: var(--text);
 }
 
 .tile-edit {
   position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 22px;
-  height: 22px;
+  top: 8px;
+  right: 8px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   border: none;
-  background: #2a3140;
-  color: var(--muted);
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text);
   font-size: 12px;
   line-height: 1;
   cursor: pointer;
   opacity: 0;
+  transform: scale(0.8);
+  transition: opacity 0.2s var(--ease), transform 0.2s var(--ease), background 0.2s var(--ease);
 }
 
 .tile:hover .tile-edit,
 .tile:focus .tile-edit {
   opacity: 1;
+  transform: scale(1);
 }
 
 .tile-edit:hover {
-  background: var(--accent);
-  color: #fff;
+  background: hsl(var(--glow-hue) 90% 60%);
 }
 
 /* ---------------- empty state ---------------- */
 
 .empty {
+  position: relative;
+  z-index: 1;
   margin: auto;
   color: var(--muted);
   text-align: center;
-  padding: 0 24px 60px;
+  padding: 0 24px 70px;
 }
 
 /* ---------------- dialogs ---------------- */
 
 .editor {
-  border: 1px solid #262d3b;
-  border-radius: 16px;
-  background: #131721;
+  position: relative;
+  z-index: 5;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 18px;
+  background: #121620;
   color: var(--text);
-  padding: 22px;
+  padding: 24px;
   width: min(440px, 92vw);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.65);
 }
 
 .editor::backdrop {
-  background: rgba(4, 6, 10, 0.6);
+  background: rgba(4, 6, 10, 0.68);
+  backdrop-filter: blur(3px);
 }
 
 .editor h2 {
-  margin: 0 0 16px;
+  margin: 0 0 18px;
   font-size: 18px;
 }
 
@@ -259,31 +428,32 @@ body {
 
 .field > span {
   display: block;
-  font-size: 12px;
+  font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.1em;
   color: var(--muted);
   margin-bottom: 6px;
 }
 
 .field input {
   width: 100%;
-  background: #0d1118;
-  border: 1px solid #262d3b;
-  border-radius: 8px;
+  background: #0b0e15;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 10px;
   color: var(--text);
   font: inherit;
-  padding: 9px 12px;
+  padding: 10px 13px;
   outline: none;
+  transition: border-color 0.2s var(--ease);
 }
 
 .field input:focus {
-  border-color: var(--accent);
+  border-color: hsl(var(--glow-hue) 90% 62%);
 }
 
 .field input[readonly] {
   color: var(--muted);
-  background: #0a0d13;
+  background: #080b11;
 }
 
 .field small {
@@ -294,17 +464,17 @@ body {
 
 .icon-row {
   display: flex;
-  gap: 12px;
+  gap: 14px;
   align-items: center;
 }
 
 .icon-preview {
-  width: 48px;
-  height: 48px;
-  border-radius: 10px;
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
   object-fit: contain;
-  background: #e8ecf4;
-  padding: 4px;
+  background: rgba(255, 255, 255, 0.92);
+  padding: 5px;
 }
 
 .icon-actions {
@@ -320,7 +490,7 @@ body {
 .editor-actions {
   display: flex;
   gap: 8px;
-  margin-top: 18px;
+  margin-top: 20px;
   align-items: center;
 }
 
@@ -332,13 +502,27 @@ body {
 
 .toast {
   position: fixed;
-  bottom: 24px;
+  bottom: 28px;
   left: 50%;
   transform: translateX(-50%);
-  background: #1c2331;
-  border: 1px solid #2c3547;
+  z-index: 6;
+  background: rgba(20, 24, 34, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 999px;
-  padding: 10px 20px;
+  padding: 11px 22px;
   font-size: 14px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.5);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+  .tile,
+  .btn,
+  body::before {
+    transition: none;
+  }
 }

@@ -12,6 +12,10 @@ const bridge = window.api;
 
 const el = {
   bar: document.getElementById('bar'),
+  hero: document.getElementById('hero'),
+  heroIcon: document.getElementById('hero-icon'),
+  heroLabel: document.getElementById('hero-label'),
+  heroHost: document.getElementById('hero-host'),
   grid: document.getElementById('grid'),
   empty: document.getElementById('empty'),
   search: document.getElementById('search'),
@@ -67,6 +71,15 @@ async function iconUrl(record) {
   return bridge.favicon(record.url);
 }
 
+/** Strip a leading www. so labels read the way people say them. */
+function hostOf(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return url;
+  }
+}
+
 function initials(label) {
   const word = String(label || '?').trim();
   return (word[0] || '?').toUpperCase();
@@ -87,6 +100,104 @@ function badgeHue(label) {
 
 /* ------------------------------ rendering ----------------------------- */
 
+function buildTile(record) {
+  const tile = document.createElement('div');
+  tile.className = 'tile';
+  tile.tabIndex = 0;
+  tile.dataset.url = record.url;
+  tile.dataset.hue = String(badgeHue(record.label));
+  tile.setAttribute('role', 'listitem');
+
+  // The badge goes in straight away so the row is never half-empty, and is
+  // upgraded only if a real icon turns up. Waiting on the network first left
+  // tiles visibly blank for as long as the slowest site took.
+  const placeholder = makeBadge(record);
+  tile.append(placeholder);
+
+  const label = document.createElement('div');
+  label.className = 'tile-label';
+  label.textContent = record.label;
+  tile.append(label);
+
+  const edit = document.createElement('button');
+  edit.className = 'tile-edit';
+  edit.textContent = '✎';
+  edit.title = 'Edit name and icon';
+  edit.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openEditor(record);
+  });
+  tile.append(edit);
+
+  tile.addEventListener('click', () => open(record.url));
+  tile.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      open(record.url);
+    }
+  });
+  tile.addEventListener('focus', () => onTileFocus(tile));
+
+  paintIcon(placeholder, record);
+  return tile;
+}
+
+/** Keep the selected tile centred and tint the room to match it. */
+/** Select a tile: focus it, then drive the presentation from it. */
+function selectTile(tile) {
+  if (!tile) return;
+  tile.focus();
+  // focus() sets activeElement, but the focus event is not guaranteed to fire
+  // when the window does not hold OS focus, and the selection has to look
+  // right either way.
+  onTileFocus(tile);
+}
+
+function onTileFocus(tile) {
+  for (const other of el.grid.querySelectorAll('.tile.is-selected')) {
+    other.classList.remove('is-selected');
+  }
+  tile.classList.add('is-selected');
+
+  const track = tile.closest('.row-track');
+  if (track) {
+    const target = tile.offsetLeft - (track.clientWidth - tile.offsetWidth) / 2;
+    track.scrollTo({ left: Math.max(0, target), behavior: 'smooth' });
+  }
+  const hue = Number(tile.dataset.hue);
+  if (Number.isFinite(hue)) {
+    document.documentElement.style.setProperty('--glow-hue', String(hue));
+  }
+  showHero(tile);
+}
+
+/** Present the selected app above the row. */
+function showHero(tile) {
+  const record = sites.find((s) => s.url === tile.dataset.url);
+  if (!record) {
+    el.hero.hidden = true;
+    return;
+  }
+
+  el.hero.hidden = false;
+  el.heroLabel.textContent = record.label;
+  el.heroHost.textContent = hostOf(record.url);
+
+  // Reuse whatever the tile is already showing, so the hero never flashes empty.
+  const tileIcon = tile.querySelector('.tile-icon, .badge');
+  el.heroIcon.className = tileIcon && tileIcon.classList.contains('badge')
+    ? 'hero-icon hero-badge'
+    : 'hero-icon';
+  if (tileIcon && tileIcon.tagName === 'IMG') {
+    el.heroIcon.src = tileIcon.src;
+    el.heroIcon.style.background = '';
+  } else {
+    el.heroIcon.removeAttribute('src');
+    el.heroIcon.style.background = tileIcon ? tileIcon.style.background : '';
+    el.heroIcon.textContent = initials(record.label);
+  }
+}
+
 async function render() {
   const term = filter.trim().toLowerCase();
   const visible = term
@@ -96,51 +207,31 @@ async function render() {
   el.grid.replaceChildren();
   el.empty.hidden = visible.length > 0 || sites.length > 0;
 
-  for (const record of visible) {
-    const tile = document.createElement('div');
-    tile.className = 'tile';
-    tile.tabIndex = 0;
-    tile.dataset.url = record.url;
-    tile.setAttribute('role', 'listitem');
+  if (visible.length) {
+    const row = document.createElement('section');
+    row.className = 'row';
 
-    const label = document.createElement('div');
-    label.className = 'tile-label';
-    label.textContent = record.label;
-    tile.append(label);
+    const heading = document.createElement('h2');
+    heading.className = 'row-label';
+    heading.textContent = term
+      ? `${visible.length} result${visible.length === 1 ? '' : 's'}`
+      : 'Your apps';
+    row.append(heading);
 
-    // The badge goes in straight away so the grid is never half-empty, and is
-    // upgraded only if a real icon turns up. Waiting on the network first left
-    // tiles visibly blank for as long as the slowest site took.
-    const placeholder = makeBadge(record);
-    tile.prepend(placeholder);
+    const track = document.createElement('div');
+    track.className = 'row-track';
+    track.setAttribute('role', 'list');
+    row.append(track);
 
-    const edit = document.createElement('button');
-    edit.className = 'tile-edit';
-    edit.textContent = '✎';
-    edit.title = 'Edit name and icon';
-    edit.addEventListener('click', (e) => {
-      e.stopPropagation();
-      openEditor(record);
-    });
-    tile.append(edit);
-
-    tile.addEventListener('click', () => open(record.url));
-    tile.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        open(record.url);
-      }
-    });
-
-    el.grid.append(tile);
-
-    paintIcon(placeholder, record);
+    el.grid.append(row);
+    for (const record of visible) track.append(buildTile(record));
   }
 
   // Selection survives a re-render, which matters when editing a tile.
   if (visible.length) {
+    const current = el.grid.querySelector('.tile.is-selected');
     const first = el.grid.querySelector('.tile');
-    if (first && !el.grid.querySelector('.tile:focus')) first.focus();
+    if (!current && first) selectTile(first);
   }
 }
 
@@ -155,7 +246,13 @@ async function paintIcon(placeholder, record) {
     src = null;
   }
 
-  // The grid may have been re-rendered while the lookup was in flight.
+  // Always yield once before checking. With a custom icon there is no network
+  // await above, so this ran synchronously while buildTile was still
+  // constructing the tile -- before the caller appended it -- and the icon was
+  // dropped as disconnected.
+  await Promise.resolve();
+
+  // The row may also have been re-rendered while the lookup was in flight.
   if (!src || !placeholder.isConnected) return;
 
   const img = document.createElement('img');
@@ -329,16 +426,42 @@ document.addEventListener('keydown', (e) => {
   if (!tiles.length) return;
   const current = tiles.indexOf(document.activeElement);
 
-  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
-    e.preventDefault();
-    tiles[Math.min(tiles.length - 1, current + 1)]?.focus();
-  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-    e.preventDefault();
-    tiles[Math.max(0, current - 1)]?.focus();
-  } else if ((e.key === 'Delete' || e.key === 'Backspace') && current >= 0) {
-    e.preventDefault();
-    const record = sites.find((s) => s.url === tiles[current].dataset.url);
-    if (record) openEditor(record);
+  // Left and right walk the row, which is the direction it scrolls. Up and down
+  // stay useful for a remote: up returns to the first app, down to the last.
+  switch (e.key) {
+    case 'ArrowRight':
+      e.preventDefault();
+      selectTile(tiles[Math.min(tiles.length - 1, Math.max(0, current) + 1)]);
+      break;
+    case 'ArrowLeft':
+      e.preventDefault();
+      selectTile(tiles[Math.max(0, current - 1)]);
+      break;
+    case 'ArrowUp':
+      e.preventDefault();
+      selectTile(tiles[0]);
+      break;
+    case 'ArrowDown':
+      e.preventDefault();
+      selectTile(tiles[tiles.length - 1]);
+      break;
+    case 'Home':
+      e.preventDefault();
+      selectTile(tiles[0]);
+      break;
+    case 'End':
+      e.preventDefault();
+      selectTile(tiles[tiles.length - 1]);
+      break;
+    case 'Delete':
+    case 'Backspace': {
+      if (current < 0) return;
+      e.preventDefault();
+      const record = sites.find((s) => s.url === tiles[current].dataset.url);
+      if (record) openEditor(record);
+      break;
+    }
+    default:
   }
 });
 

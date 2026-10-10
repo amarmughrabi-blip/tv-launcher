@@ -31,7 +31,18 @@
       </div>
     </header>
 
-    <main id="grid" class="grid" role="list"></main>
+    <!-- Shows whatever is selected: the focal point, the way a TV home screen
+         presents the thing you are about to open. -->
+    <div id="hero" class="hero" hidden>
+      <img id="hero-icon" class="hero-icon" alt="" />
+      <div class="hero-text">
+        <h1 id="hero-label" class="hero-label"></h1>
+        <p id="hero-host" class="hero-host"></p>
+      </div>
+      <span class="hero-hint">Open in browser &middot; Back returns</span>
+    </div>
+
+    <main id="grid" class="grid"></main>
 
     <p id="empty" class="empty" hidden>
       No apps yet. Use <strong>Add app</strong> to put your first one on the grid.

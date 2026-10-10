@@ -49,6 +49,13 @@ let lastPointerY = -1;
 /** How long the bar sits idle before hiding, and how near the top reveals it. */
 const AUTO_HIDE_MS = 2200;
 const REVEAL_ZONE_PX = 90;
+/**
+ * Hiding needs a wider band than revealing. Without the gap the bar flickers
+ * when the pointer sits right on the boundary, because every mouse move toggles
+ * it.
+ */
+const HIDE_ZONE_PX = 160;
+const BOUNDS_ANIM_MS = 280;
 
 /** Space the site view must leave at the top for the shared bar. */
 function chromeInset() {
@@ -56,6 +63,11 @@ function chromeInset() {
 }
 
 function showChrome({ schedule = true } = {}) {
+  if (chromeVisible) {
+    // Already up; just hold it open rather than restarting the countdown.
+    if (schedule) scheduleHideChrome();
+    return;
+  }
   chromeVisible = true;
   sendToLauncher('chrome:visible', true);
   trackViewBounds();
@@ -64,7 +76,7 @@ function showChrome({ schedule = true } = {}) {
 }
 
 function hideChrome() {
-  if (!siteView) return;
+  if (!siteView || !chromeVisible) return;
   chromeVisible = false;
   sendToLauncher('chrome:visible', false);
   trackViewBounds();
@@ -86,6 +98,8 @@ function scheduleHideChrome() {
 function cancelHideChrome() {
   clearTimeout(chromeTimer);
   chromeTimer = null;
+  clearInterval(boundsTimer);
+  boundsTimer = null;
 }
 
 /*
@@ -103,7 +117,52 @@ function handleSitePointer(y) {
   if (!siteView) return;
   lastPointerY = y;
   if (y < REVEAL_ZONE_PX) showChrome();
-  else if (chromeVisible) scheduleHideChrome();
+  else if (y > HIDE_ZONE_PX && chromeVisible) scheduleHideChrome();
+}
+
+/* ----------------------- site view geometry --------------------------- */
+
+/**
+ * The view grows into the space the bar vacates. Jumping the bounds would snap
+ * the page by 52px on every reveal, so it is interpolated instead.
+ */
+let viewTop = 0;
+let boundsTimer = null;
+
+function applyViewBounds() {
+  if (!siteView || siteView.webContents.isDestroyed()) return;
+  const [width, height] = mainWindow.getContentSize();
+  siteView.setBounds({ x: 0, y: viewTop, width, height: Math.max(0, height - viewTop) });
+}
+
+function trackViewBounds({ animate = true } = {}) {
+  if (!siteView || !mainWindow || mainWindow.isDestroyed()) return;
+  const target = chromeInset();
+  const from = viewTop;
+
+  clearInterval(boundsTimer);
+  boundsTimer = null;
+
+  if (!animate || from === target) {
+    viewTop = target;
+    applyViewBounds();
+    return;
+  }
+
+  const delta = target - from;
+  const started = Date.now();
+  boundsTimer = setInterval(() => {
+    const t = Math.min(1, (Date.now() - started) / BOUNDS_ANIM_MS);
+    // easeOutCubic: leaves quickly, settles gently.
+    viewTop = Math.round(from + delta * (1 - (1 - t) ** 3));
+    applyViewBounds();
+    if (t >= 1) {
+      clearInterval(boundsTimer);
+      boundsTimer = null;
+      viewTop = target;
+      applyViewBounds();
+    }
+  }, 16);
 }
 
 function createWindow() {
@@ -144,10 +203,15 @@ function openSite(url) {
     },
   });
 
-  const [width, height] = mainWindow.getContentSize();
   // Inset below the shared toolbar so Back and "Open in Brave" stay reachable.
-  // WebContentsView has no auto-resize, so bounds are maintained on resize.
-  view.setBounds({ x: 0, y: chromeInset(), width, height: Math.max(0, height - chromeInset()) });
+  // WebContentsView has no auto-resize, so bounds are maintained thereafter.
+  viewTop = chromeInset();
+  view.setBounds({
+    x: 0,
+    y: viewTop,
+    width: mainWindow.getContentSize()[0],
+    height: Math.max(0, mainWindow.getContentSize()[1] - viewTop),
+  });
 
   // Keep the site from navigating the whole app away, and hand external links
   // to the system browser rather than trapping them in the view.
@@ -178,9 +242,9 @@ function openSite(url) {
   showChrome();
   view.webContents.loadURL(url).catch((err) => log(`load failed: ${err.message}`));
 
-  mainWindow.on('resize', trackViewBounds);
-  mainWindow.on('maximize', trackViewBounds);
-  mainWindow.on('unmaximize', trackViewBounds);
+  mainWindow.on('resize', () => trackViewBounds({ animate: false }));
+  mainWindow.on('maximize', () => trackViewBounds({ animate: false }));
+  mainWindow.on('unmaximize', () => trackViewBounds({ animate: false }));
 
   sendToLauncher('site:opened', { url, title: '' });
   view.webContents.on('page-title-updated', (_e, title) => {
@@ -208,14 +272,6 @@ function destroySiteView() {
   if (!siteView.webContents.isDestroyed()) siteView.webContents.close();
   siteView = null;
   chromeVisible = true;
-}
-
-/** Keep the site surface filling the area below the toolbar as the window changes. */
-function trackViewBounds() {
-  if (!siteView || !mainWindow) return;
-  const [width, height] = mainWindow.getContentSize();
-  const top = chromeInset();
-  siteView.setBounds({ x: 0, y: top, width, height: Math.max(0, height - top) });
 }
 
 function sendToLauncher(channel, payload) {
@@ -336,9 +392,21 @@ if (process.env.TVL_DEBUG_INPUT === '1') {
   // the preload picked it up, so the real path is checked rather than assumed.
   ipcMain.handle('debug:probe-pointer', async (_e, { y = 10 } = {}) => {
     if (!siteView || siteView.webContents.isDestroyed()) return { ok: false };
+    /*
+     * Dispatches inside the page rather than through sendInputEvent. Injected
+     * hardware-level input is not delivered to a window that lacks OS focus,
+     * which made this check fail for reasons unrelated to the preload. A DOM
+     * event still exercises the real chain: preload listener -> IPC -> handler.
+     */
     lastPointerY = -1;
-    siteView.webContents.sendInputEvent({ type: 'mouseMove', x: 200, y });
-    await new Promise((r) => setTimeout(r, 400));
+    try {
+      await siteView.webContents.executeJavaScript(
+        `window.dispatchEvent(new MouseEvent('mousemove', { clientY: ${Number(y)} }))`,
+      );
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+    await new Promise((r) => setTimeout(r, 250));
     return { ok: lastPointerY !== -1, lastPointerY };
   });
 }

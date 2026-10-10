@@ -162,12 +162,19 @@ async function ensureSites() {
   if (record.label !== label) return fail('name changed when the icon changed');
   out.push(`ok   icon changed via the picker (${record.icon})`);
 
-  const shown = [...document.querySelectorAll('.tile')]
-    .find((t) => t.dataset.url === url)
-    ?.querySelector('.tile-icon, .badge');
-  if (shown && shown.className === 'badge') {
-    return fail('tile still shows the letter badge after a custom icon');
+  // The grid re-renders asynchronously, so poll rather than assume.
+  let showsImage = false;
+  for (let i = 0; i < 20; i += 1) {
+    const shown = [...document.querySelectorAll('.tile')]
+      .find((t) => t.dataset.url === url)
+      ?.querySelector('.tile-icon, .badge');
+    if (shown && shown.className !== 'badge') {
+      showsImage = true;
+      break;
+    }
+    await wait(250);
   }
+  if (!showsImage) return fail('tile still shows the letter badge after a custom icon');
   out.push('ok   tile shows the picked image');
 
   // restore
