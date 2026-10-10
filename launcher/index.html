@@ -73,6 +73,10 @@
           </div>
         </section>
 
+        <div class="profiles" id="profiles">
+          <div class="profile-chips" id="profile-chips"></div>
+        </div>
+
         <div class="tabs" id="tabs">
           <button class="tab is-active" data-tab="home">For You</button>
           <button class="tab" data-tab="apps">Apps</button>
@@ -140,6 +144,24 @@
           <span class="spacer"></span>
           <button type="button" id="add-cancel" class="btn btn-ghost">Cancel</button>
           <button type="submit" class="btn btn-primary">Add</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="profile-editor" class="editor">
+      <form method="dialog" id="profile-form">
+        <h2>Profile</h2>
+        <label class="field">
+          <span>Name</span>
+          <input id="profile-name" type="text" autocomplete="off" />
+          <small>Each profile keeps its own set of apps.</small>
+        </label>
+        <p id="profile-meta" class="profile-meta"></p>
+        <div class="editor-actions">
+          <button type="button" id="profile-delete" class="btn btn-danger">Delete</button>
+          <span class="spacer"></span>
+          <button type="button" id="profile-cancel" class="btn btn-ghost">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save</button>
         </div>
       </form>
     </dialog>

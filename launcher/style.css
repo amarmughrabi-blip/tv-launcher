@@ -292,6 +292,92 @@ body::before {
   opacity: 0.7;
 }
 
+/* ---------------- profile switcher ---------------- */
+
+.profiles {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 14px;
+  flex: none;
+  min-height: 34px;
+}
+
+.profile-chips {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 3px 0;
+}
+
+.profile-chips::-webkit-scrollbar {
+  display: none;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 15px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.2s var(--ease), color 0.2s var(--ease), border-color 0.2s var(--ease);
+}
+
+.chip:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.chip.is-active {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: hsl(var(--glow-hue) 90% 60% / 0.7);
+  color: var(--text);
+}
+
+.chip-count {
+  font-size: 11px;
+  color: var(--muted);
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.chip-add {
+  padding: 7px 14px;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1;
+}
+
+.chip-edit {
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0;
+  opacity: 0.7;
+}
+
+.chip-edit:hover {
+  opacity: 1;
+}
+
+.profile-meta {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 /* ---------------- tabs ---------------- */
 
 .tabs {

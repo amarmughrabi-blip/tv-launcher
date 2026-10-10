@@ -316,6 +316,14 @@ function sendToLauncher(channel, payload) {
 
 /* ------------------------------- IPC ---------------------------------- */
 
+// The site CRUD helpers act on whichever profile is active, so switching
+// profiles is just a state change followed by a reload.
+ipcMain.handle('profiles:list', () => store.listProfiles());
+ipcMain.handle('profiles:create', (_e, { name }) => store.createProfile(name));
+ipcMain.handle('profiles:rename', (_e, { id, name }) => store.renameProfile(id, name));
+ipcMain.handle('profiles:delete', (_e, { id }) => store.deleteProfile(id));
+ipcMain.handle('profiles:activate', (_e, { id }) => store.setActiveProfile(id));
+
 ipcMain.handle('sites:list', () => store.load());
 
 ipcMain.handle('sites:add', (_e, { url, label, icon }) => store.add(url, label, icon));

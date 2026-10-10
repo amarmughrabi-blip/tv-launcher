@@ -1,12 +1,18 @@
 'use strict';
 
 /**
- * Site list persistence.
+ * Profiles and site storage.
  *
- * The on-disk shape is an array of records: { url, label, icon }. A bare array
- * of URL strings is also accepted on read and upgraded in place, so a profile
- * written by an earlier revision keeps working. The upgrade is written back
- * immediately, which is what stops the migration running on every single load.
+ * A profile is a named set of sites. Exactly one is active, and the CRUD
+ * helpers below act on it, so callers do not have to thread a profile id
+ * through every call.
+ *
+ * On disk:
+ *   profiles.json  { "active": "<id>", "profiles": [ { id, name, sites } ] }
+ *
+ * The older sites.json (a bare array of records, or of URL strings) is read
+ * once on first run and folded into a default profile, then left untouched as a
+ * backup.
  */
 
 const fs = require('node:fs');
@@ -14,12 +20,13 @@ const path = require('node:path');
 const { paths } = require('./paths');
 
 const SCHEME_RE = /^([a-zA-Z][a-zA-Z0-9+.-]*):\/\//;
-const DEFAULT_LABEL_RE = /^[a-zA-Z0-9 ()\-']{3,64}$/;
+const DEFAULT_PROFILE_ID = 'default';
+const DEFAULT_PROFILE_NAME = 'My apps';
 
-/**
- * Turn typed text into a launchable URL, or null if it cannot be one.
- * Adds https:// when no scheme is given and rejects hostless input.
- */
+const PROFILE_NAME_MAX = 40;
+
+/* --------------------------------- urls -------------------------------- */
+
 function normaliseUrl(raw) {
   const text = String(raw ?? '').trim();
   if (!text) return null;
@@ -75,45 +82,187 @@ function recordsEqual(a, b) {
   });
 }
 
-function load() {
-  const file = paths.sitesFile();
+/* ------------------------------- profiles ------------------------------ */
+
+function sanitiseName(name, fallback) {
+  const text = String(name ?? '').trim().replace(/\s+/g, ' ');
+  if (!text) return fallback;
+  return text.slice(0, PROFILE_NAME_MAX);
+}
+
+function makeProfile(name, id, sites) {
+  return {
+    id: id || DEFAULT_PROFILE_ID,
+    name: sanitiseName(name, DEFAULT_PROFILE_NAME),
+    sites: Array.isArray(sites) ? sites.map(coerce).filter(Boolean) : [],
+  };
+}
+
+/** Build the initial profile list from whatever is already on disk. */
+function initialState() {
+  // First run: fold a pre-profiles sites.json in, so nothing is lost.
+  let legacy = null;
+  try {
+    legacy = JSON.parse(fs.readFileSync(paths.sitesFile(), 'utf8'));
+  } catch {
+    legacy = null;
+  }
+
+  const seed = Array.isArray(legacy) ? legacy.map(coerce).filter(Boolean) : [];
+  return {
+    active: DEFAULT_PROFILE_ID,
+    profiles: [makeProfile(DEFAULT_PROFILE_NAME, DEFAULT_PROFILE_ID, seed)],
+  };
+}
+
+/** Canonical shape, used for both writing and change detection. */
+function canonicalise(state) {
+  return {
+    active: state.active,
+    profiles: state.profiles.map((p) => ({
+      id: p.id,
+      name: p.name,
+      sites: p.sites.map((s) => ({ url: s.url, label: s.label, icon: s.icon || null })),
+    })),
+  };
+}
+
+/**
+ * Read the profile file, normalising and persisting it once when it differs.
+ *
+ * Persisting here is what makes migration stick: without it the legacy shapes
+ * would be re-upgraded on every single load, forever.
+ */
+function readState() {
+  const file = paths.profilesFile();
   let raw;
   try {
     raw = fs.readFileSync(file, 'utf8');
   } catch (err) {
     if (err.code !== 'ENOENT') throw err;
-    return [];
+    return writeState(initialState());
   }
 
   let data;
   try {
     data = JSON.parse(raw);
   } catch {
-    // A corrupt file must not take the app down. Keep a copy so it can be
-    // inspected, and carry on with an empty list.
-    const backup = `${file}.corrupt-${Date.now()}`;
+    // Corrupt file: keep a copy and carry on rather than refusing to start.
     try {
-      fs.writeFileSync(backup, raw, 'utf8');
+      fs.writeFileSync(`${file}.corrupt-${Date.now()}`, raw, 'utf8');
     } catch {
       /* best effort */
     }
-    return [];
+    return writeState(initialState());
   }
 
-  if (!Array.isArray(data)) return [];
+  if (!data || !Array.isArray(data.profiles) || data.profiles.length === 0) {
+    return writeState(initialState());
+  }
 
-  const records = data.map(coerce).filter(Boolean);
-  // Only rewrite when the file genuinely differs from the upgraded shape, so
-  // repeated loads are stable.
-  if (!recordsEqual(records, data)) save(records);
+  const profiles = data.profiles
+    .filter((p) => p && typeof p.id === 'string')
+    .map((p, i) => makeProfile(p.name, p.id || `p${i}`, Array.isArray(p.sites) ? p.sites : []));
+  if (!profiles.length) return writeState(initialState());
 
-  return records;
+  const active = profiles.some((p) => p.id === data.active) ? data.active : profiles[0].id;
+  const state = { active, profiles };
+
+  const canonical = `${JSON.stringify(canonicalise(state), null, 2)}\n`;
+  if (canonical !== raw) writeState(state);
+  return state;
+}
+
+function writeState(state) {
+  fs.mkdirSync(paths.appDir(), { recursive: true });
+  const ordered = {
+    active: state.active,
+    profiles: state.profiles.map((p) => ({
+      id: p.id,
+      name: p.name,
+      sites: p.sites,
+    })),
+  };
+  fs.writeFileSync(paths.profilesFile(), `${JSON.stringify(ordered, null, 2)}\n`, 'utf8');
+  return ordered;
+}
+
+function nextProfileId(state) {
+  const taken = new Set(state.profiles.map((p) => p.id));
+  let n = state.profiles.length + 1;
+  while (taken.has(`p${n}`)) n += 1;
+  return `p${n}`;
+}
+
+function activeProfile(state = readState()) {
+  return state.profiles.find((p) => p.id === state.active) || state.profiles[0];
+}
+
+/* ---------------------------- profile actions -------------------------- */
+
+function listProfiles() {
+  const state = readState();
+  return {
+    active: state.active,
+    profiles: state.profiles.map((p) => ({ id: p.id, name: p.name, count: p.sites.length })),
+  };
+}
+
+function createProfile(name) {
+  const state = readState();
+  const id = nextProfileId(state);
+  state.profiles.push(makeProfile(name || `Profile ${state.profiles.length + 1}`, id, []));
+  state.active = id;
+  writeState(state);
+  return listProfiles();
+}
+
+function renameProfile(id, name) {
+  const state = readState();
+  const profile = state.profiles.find((p) => p.id === id);
+  if (!profile) return listProfiles();
+  profile.name = sanitiseName(name, profile.name);
+  return writeState(state) && listProfiles();
+}
+
+/** Delete a profile. The last one is kept, so there is always somewhere to go. */
+function deleteProfile(id) {
+  const state = readState();
+  if (state.profiles.length <= 1) return listProfiles();
+
+  const index = state.profiles.findIndex((p) => p.id === id);
+  if (index < 0) return listProfiles();
+
+  const [removed] = state.profiles.splice(index, 1);
+  for (const site of removed.sites) {
+    // Only drop the icon if no other profile is still using it.
+    const stillUsed = state.profiles.some((p) => p.sites.some((s) => s.icon === site.icon));
+    if (site.icon && !stillUsed) deleteIcon(site.icon);
+  }
+  if (state.active === id) state.active = state.profiles[0].id;
+  return writeState(state) && listProfiles();
+}
+
+function setActiveProfile(id) {
+  const state = readState();
+  if (!state.profiles.some((p) => p.id === id)) return listProfiles();
+  state.active = id;
+  return writeState(state) && listProfiles();
+}
+
+/* ------------------------------ site CRUD ------------------------------ */
+
+/** Records in the active profile. */
+function load() {
+  return activeProfile().sites;
 }
 
 function save(records) {
-  fs.mkdirSync(paths.appDir(), { recursive: true });
-  fs.writeFileSync(paths.sitesFile(), `${JSON.stringify(records, null, 2)}\n`, 'utf8');
-  return records;
+  const state = readState();
+  const profile = activeProfile(state);
+  profile.sites = (Array.isArray(records) ? records : []).map(coerce).filter(Boolean);
+  writeState(state);
+  return profile.sites;
 }
 
 function find(records, url) {
@@ -127,7 +276,9 @@ function add(url, label, icon) {
   if (find(records, normalised)) return records; // adding an existing site is a no-op
 
   records.push(makeRecord(normalised, label, icon));
-  records.sort((a, b) => (a.label || '').toLowerCase().localeCompare((b.label || '').toLowerCase()));
+  records.sort((a, b) =>
+    (a.label || '').toLowerCase().localeCompare((b.label || '').toLowerCase()),
+  );
   return save(records);
 }
 
@@ -149,7 +300,6 @@ function update(url, fields = {}) {
     record.label = label || defaultLabel(record.url);
   }
   if ('icon' in fields) {
-    // Replacing an icon discards the old file so the store does not grow.
     const next = fields.icon || null;
     if (record.icon && record.icon !== next) deleteIcon(record.icon);
     record.icon = next;
@@ -157,7 +307,6 @@ function update(url, fields = {}) {
   return save(records);
 }
 
-/** Move a record one slot left (-1) or right (+1). */
 function reorder(url, direction) {
   const records = load();
   const index = records.findIndex((r) => r.url === url);
@@ -171,11 +320,19 @@ function reorder(url, direction) {
 function deleteIcon(name) {
   // Synchronous on purpose: removal is not on a hot path, and a caller that
   // deletes a site and then checks the icon store must not race us.
-  if (!name || !/^[a-f0-9]+\.png$/.test(name)) return; // never unlink outside the store
+  if (!name || !/^[a-f0-9]+\.png$/.test(name)) return;
   fs.rmSync(path.join(paths.iconsDir(), name), { force: true });
 }
 
 module.exports = {
+  // profiles
+  listProfiles,
+  createProfile,
+  renameProfile,
+  deleteProfile,
+  setActiveProfile,
+  activeProfile,
+  // sites in the active profile
   normaliseUrl,
   defaultLabel,
   coerce,
@@ -187,6 +344,16 @@ module.exports = {
   update,
   reorder,
   deleteIcon,
-  // exported for tests
-  _internal: { recordsEqual, makeRecord, SCHEME_RE, DEFAULT_LABEL_RE },
+  // internals, for tests
+  _internal: {
+    recordsEqual,
+    makeRecord,
+    makeProfile,
+    sanitiseName,
+    initialState,
+    readState,
+    writeState,
+    DEFAULT_PROFILE_ID,
+    DEFAULT_PROFILE_NAME,
+  },
 };

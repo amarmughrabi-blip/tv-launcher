@@ -13,8 +13,9 @@
     "verify:browsing": "./scripts/verify.sh scripts/verify-browsing.js",
     "verify:icons": "node scripts/make-fixture.js && ./scripts/verify.sh scripts/verify-icons.js",
     "verify:blocking": "./scripts/run.sh scripts/verify-blocking.js",
-    "verify": "npm test && npm run verify:blocking && npm run verify:editing && npm run verify:browsing && npm run verify:icons && npm run verify:chrome",
-    "verify:chrome": "./scripts/verify.sh scripts/verify-chrome.js"
+    "verify": "npm test && npm run verify:blocking && npm run verify:editing && npm run verify:browsing && npm run verify:icons && npm run verify:chrome && npm run verify:profiles",
+    "verify:chrome": "./scripts/verify.sh scripts/verify-chrome.js",
+    "verify:profiles": "./scripts/verify.sh scripts/verify-profiles.js"
   },
   "dependencies": {
     "@ghostery/adblocker": "^2.20.1"

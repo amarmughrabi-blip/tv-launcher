@@ -25,23 +25,52 @@ which shell is used.
 
 25/25 tests pass.
 
+## Profiles
+
+Sites live in named profiles rather than one flat list, so different sets stay
+separate - one per person, or one per use.
+
+A chip row above the tabs switches between them, each showing how many apps it
+holds. `+` creates a profile and makes it active; the pencil on the active chip
+renames or deletes it. The last profile cannot be deleted, so there is always
+somewhere to go.
+
+Adding, editing and reordering all act on the active profile, and switching
+reloads the launcher against that set.
+
+Storage is `profiles.json`:
+
+```json
+{
+  "active": "default",
+  "profiles": [{ "id": "default", "name": "My apps", "sites": [] }]
+}
+```
+
+A pre-existing `sites.json` is folded into a default profile on first run and
+left on disk as a backup.
+
 ## Layout
 
 ```
-main.js                      app entry (not yet written)
+main.js                      app entry
 src/
   paths.js                   data locations
-  store.js                   site records, migration, CRUD
+  store.js                   profiles and site records
   icons.js                   icon normalisation and storage
   blocker.js                 filter engine + session bridge
+  brave.js                   Brave fallback for playback
+  favicons.js                favicon fetch and cache
   drm.js                     Widevine component readiness
   key-system.js              key-system probe
-  brave.js                   Brave fallback (not yet written)
+  site-pointer-preload.js    pointer height, for revealing the bar
 scripts/
   setup-ecs.sh               fetch and verify the ECS runtime
   run.sh                     launch on the ECS runtime
-  drm-gate.js                Phase 1 gate — kept as a regression check
-  verify-blocking.js         live blocking verification
+  install-desktop.js         application-menu entry and icon
+  verify.sh                  run a check against a throwaway profile
+  drm-gate.js                Phase 1 gate
+  verify-*.js                live checks
 test/                        node:test suites
 vendor/ecs-dist/             the runtime (gitignored)
 ```

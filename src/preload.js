@@ -11,6 +11,12 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
+  listProfiles: () => ipcRenderer.invoke('profiles:list'),
+  createProfile: (name) => ipcRenderer.invoke('profiles:create', { name }),
+  renameProfile: (id, name) => ipcRenderer.invoke('profiles:rename', { id, name }),
+  deleteProfile: (id) => ipcRenderer.invoke('profiles:delete', { id }),
+  activateProfile: (id) => ipcRenderer.invoke('profiles:activate', { id }),
+
   listSites: () => ipcRenderer.invoke('sites:list'),
   addSite: (url, label, icon) => ipcRenderer.invoke('sites:add', { url, label, icon }),
   updateSite: (url, label, icon) => ipcRenderer.invoke('sites:update', { url, label, icon }),

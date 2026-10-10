@@ -14,6 +14,9 @@ function dataRoot() {
 
 const paths = {
   appDir: () => dataRoot(),
+  /** Named sets of sites. */
+  profilesFile: () => path.join(dataRoot(), 'profiles.json'),
+  /** Pre-profiles format; read once on first run, then left as a backup. */
   sitesFile: () => path.join(dataRoot(), 'sites.json'),
   iconsDir: () => path.join(dataRoot(), 'icons'),
   cacheDir: () => path.join(dataRoot(), 'cache'),

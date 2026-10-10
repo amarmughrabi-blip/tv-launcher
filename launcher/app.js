@@ -14,6 +14,13 @@ const el = {
   bar: document.getElementById('bar'),
   railAdd: document.getElementById('rail-add'),
   stage: document.querySelector('.stage'),
+  profileChips: document.getElementById('profile-chips'),
+  profileEditor: document.getElementById('profile-editor'),
+  profileForm: document.getElementById('profile-form'),
+  profileName: document.getElementById('profile-name'),
+  profileMeta: document.getElementById('profile-meta'),
+  profileDelete: document.getElementById('profile-delete'),
+  profileCancel: document.getElementById('profile-cancel'),
   hero: document.getElementById('hero'),
   heroIcon: document.getElementById('hero-icon'),
   heroLabel: document.getElementById('hero-label'),
@@ -524,6 +531,119 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+/* ---------------------------- profiles -------------------------------- */
+
+let profiles = { active: null, profiles: [] };
+let editingProfileId = null;
+
+async function loadProfiles() {
+  profiles = await bridge.listProfiles();
+  renderProfiles();
+}
+
+/**
+ * Render the profile switcher. The active chip carries an edit affordance;
+ * a trailing chip creates a new profile.
+ */
+function renderProfiles() {
+  el.profileChips.replaceChildren();
+
+  for (const profile of profiles.profiles) {
+    const chip = document.createElement('button');
+    chip.className = 'chip';
+    chip.dataset.id = profile.id;
+    if (profile.id === profiles.active) chip.classList.add('is-active');
+
+    const name = document.createElement('span');
+    name.textContent = profile.name;
+    chip.append(name);
+
+    const count = document.createElement('span');
+    count.className = 'chip-count';
+    count.textContent = String(profile.count);
+    chip.append(count);
+
+    if (profile.id === profiles.active) {
+      const edit = document.createElement('span');
+      edit.className = 'chip-edit';
+      edit.textContent = '✎';
+      edit.title = 'Rename or delete this profile';
+      edit.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openProfileEditor(profile);
+      });
+      chip.append(edit);
+    }
+
+    chip.addEventListener('click', () => switchProfile(profile.id));
+    el.profileChips.append(chip);
+  }
+
+  const add = document.createElement('button');
+  add.className = 'chip chip-add';
+  add.textContent = '+';
+  add.title = 'New profile';
+  add.addEventListener('click', createProfile);
+  el.profileChips.append(add);
+}
+
+async function switchProfile(id) {
+  if (!id || id === profiles.active) return;
+  profiles = await bridge.activateProfile(id);
+  filter = '';
+  el.search.value = '';
+  selectedUrl = null;
+  el.hero.hidden = true;
+  await load();
+  toast(`Switched to ${profiles.profiles.find((p) => p.id === id)?.name ?? 'profile'}`);
+}
+
+async function createProfile() {
+  const name = prompt('Name for the new profile');
+  if (name === null) return;
+  profiles = await bridge.createProfile(name.trim() || undefined);
+  filter = '';
+  el.search.value = '';
+  selectedUrl = null;
+  await load();
+  toast('Profile created');
+}
+
+function openProfileEditor(profile) {
+  editingProfileId = profile.id;
+  el.profileName.value = profile.name;
+  const only = profiles.profiles.length <= 1;
+  el.profileDelete.disabled = only;
+  el.profileMeta.textContent = only
+    ? 'This is your only profile, so it cannot be deleted.'
+    : `${profile.count} app${profile.count === 1 ? '' : 's'} in this profile.`;
+  el.profileEditor.showModal();
+  el.profileName.focus();
+  el.profileName.select();
+}
+
+el.profileForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!editingProfileId) return;
+  profiles = await bridge.renameProfile(editingProfileId, el.profileName.value.trim());
+  el.profileEditor.close();
+  await load();
+  toast('Profile saved');
+});
+
+el.profileCancel.addEventListener('click', () => el.profileEditor.close());
+
+el.profileDelete.addEventListener('click', async () => {
+  if (!editingProfileId || profiles.profiles.length <= 1) return;
+  const profile = profiles.profiles.find((p) => p.id === editingProfileId);
+  if (!confirm(`Delete "${profile?.name}" and its ${profile?.count ?? 0} app(s)?`)) return;
+  profiles = await bridge.deleteProfile(editingProfileId);
+  selectedUrl = null;
+  el.profileEditor.close();
+  await load();
+  toast('Profile deleted');
+});
+
 /* ------------------------------ startup ------------------------------- */
 
 bridge.onSiteOpened(({ url, title }) => {
@@ -540,6 +660,7 @@ bridge.onSiteClosed(() => {
 
 async function load() {
   sites = await bridge.listSites();
+  await loadProfiles();
   setBarMode('launcher');
   await render();
 }
