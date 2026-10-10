@@ -27,23 +27,23 @@ which shell is used.
 
 ## Profiles
 
-Sites live in named profiles rather than one flat list, so different sets stay
-separate - one per person, or one per use.
+A full-screen picker on launch, the way a TV service asks who is watching.
+Choose a profile and it opens with that profile's apps.
 
-A chip row above the tabs switches between them, each showing how many apps it
-holds. `+` creates a profile and makes it active; the pencil on the active chip
-renames or deletes it. The last profile cannot be deleted, so there is always
-somewhere to go.
+Each tile shows a picture or, failing that, a coloured initial derived from the
+name. `Add Profile` sits at the end of the row. `Manage Profiles` (bottom right)
+turns on edit and delete for every tile; delete asks once before it acts, and
+the last profile cannot be removed so there is always somewhere to go.
 
-Adding, editing and reordering all act on the active profile, and switching
-reloads the launcher against that set.
+Profiles can be renamed and given a picture, independently of their apps.
+Switching profiles reloads the launcher against that set.
 
 Storage is `profiles.json`:
 
 ```json
 {
   "active": "default",
-  "profiles": [{ "id": "default", "name": "My apps", "sites": [] }]
+  "profiles": [{ "id": "default", "name": "watching stuff", "avatar": null, "sites": [] }]
 }
 ```
 

@@ -323,6 +323,7 @@ ipcMain.handle('profiles:create', (_e, { name }) => store.createProfile(name));
 ipcMain.handle('profiles:rename', (_e, { id, name }) => store.renameProfile(id, name));
 ipcMain.handle('profiles:delete', (_e, { id }) => store.deleteProfile(id));
 ipcMain.handle('profiles:activate', (_e, { id }) => store.setActiveProfile(id));
+ipcMain.handle('profiles:avatar', (_e, { id, avatar }) => store.setProfileAvatar(id, avatar));
 
 ipcMain.handle('sites:list', () => store.load());
 

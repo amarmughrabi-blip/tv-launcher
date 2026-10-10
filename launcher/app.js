@@ -14,8 +14,17 @@ const el = {
   bar: document.getElementById('bar'),
   railAdd: document.getElementById('rail-add'),
   stage: document.querySelector('.stage'),
-  profileChips: document.getElementById('profile-chips'),
+  picker: document.getElementById('picker'),
+  pickerGrid: document.getElementById('picker-grid'),
+  pickerManage: document.getElementById('picker-manage'),
+  pickerHint: document.getElementById('picker-hint'),
+  profileAvatarPreview: document.getElementById('profile-avatar-preview'),
+  profileAvatarInput: document.getElementById('profile-avatar-input'),
+  profileAvatarClear: document.getElementById('profile-avatar-clear'),
   profileEditor: document.getElementById('profile-editor'),
+  profileTitle: document.getElementById('profile-title'),
+  profileHint: document.getElementById('profile-hint'),
+  profileSave: document.getElementById('profile-save'),
   profileForm: document.getElementById('profile-form'),
   profileName: document.getElementById('profile-name'),
   profileMeta: document.getElementById('profile-meta'),
@@ -535,111 +544,289 @@ document.addEventListener('keydown', (e) => {
 
 let profiles = { active: null, profiles: [] };
 let editingProfileId = null;
+let editingProfileAvatar = null;
+let pickerManageMode = false;
 
 async function loadProfiles() {
   profiles = await bridge.listProfiles();
-  renderProfiles();
 }
 
-/**
- * Render the profile switcher. The active chip carries an edit affordance;
- * a trailing chip creates a new profile.
- */
-function renderProfiles() {
-  el.profileChips.replaceChildren();
+/** Stable colour per profile name, used when it has no picture. */
+function profileHue(name) {
+  let hash = 0;
+  const text = String(name || '');
+  for (let i = 0; i < text.length; i += 1) hash = (hash * 31 + text.charCodeAt(i)) % 360;
+  return hash;
+}
+
+/* ------------------------- the picker itself -------------------------- */
+
+function showPicker({ manage = false } = {}) {
+  pickerManageMode = manage;
+  el.picker.hidden = false;
+  el.pickerManage.hidden = manage;
+  el.pickerHint.hidden = manage;
+  renderPicker();
+}
+
+function hidePicker() {
+  el.picker.hidden = true;
+}
+
+function renderPicker() {
+  el.pickerGrid.replaceChildren();
 
   for (const profile of profiles.profiles) {
-    const chip = document.createElement('button');
-    chip.className = 'chip';
-    chip.dataset.id = profile.id;
-    if (profile.id === profiles.active) chip.classList.add('is-active');
+    const item = document.createElement('button');
+    item.className = 'picker-item';
+    item.dataset.id = profile.id;
+    item.setAttribute('aria-label', profile.name);
 
-    const name = document.createElement('span');
-    name.textContent = profile.name;
-    chip.append(name);
-
-    const count = document.createElement('span');
-    count.className = 'chip-count';
-    count.textContent = String(profile.count);
-    chip.append(count);
-
-    if (profile.id === profiles.active) {
-      const edit = document.createElement('span');
-      edit.className = 'chip-edit';
-      edit.textContent = '✎';
-      edit.title = 'Rename or delete this profile';
-      edit.addEventListener('click', (e) => {
-        e.stopPropagation();
-        openProfileEditor(profile);
-      });
-      chip.append(edit);
+    const face = document.createElement('div');
+    face.className = 'picker-face';
+    if (profile.avatar) {
+      const img = document.createElement('img');
+      img.src = `app-icon://favicon/${profile.avatar}`;
+      img.alt = '';
+      img.style.borderRadius = '12px';
+      face.replaceWith(img);
+      img.className = 'picker-face';
+      img.addEventListener('error', () => {
+        img.replaceWith(face);
+        paintFace(face, profile);
+      }, { once: true });
+      paintFace(img, profile);
+      item.append(img);
+    } else {
+      paintFace(face, profile);
+      item.append(face);
     }
 
-    chip.addEventListener('click', () => switchProfile(profile.id));
-    el.profileChips.append(chip);
+    const name = document.createElement('span');
+    name.className = 'picker-name';
+    name.textContent = profile.name;
+    item.append(name);
+
+    if (pickerManageMode) {
+      const tools = document.createElement('span');
+      tools.className = 'picker-tools';
+
+      const edit = document.createElement('button');
+      edit.className = 'picker-tool';
+      edit.textContent = '✎';
+      edit.title = 'Edit';
+      edit.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openProfileDialog(profile);
+      });
+
+      const del = document.createElement('button');
+      del.className = 'picker-tool';
+      del.textContent = '×';
+      del.title = profiles.profiles.length <= 1 ? 'Cannot delete the only profile' : 'Delete';
+      del.disabled = profiles.profiles.length <= 1;
+      del.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (del.disabled) return;
+        deleteProfileFromPicker(profile);
+      });
+
+      tools.append(edit, del);
+      item.append(tools);
+    }
+
+    item.addEventListener('click', () => enterProfile(profile.id));
+    item.addEventListener('focus', () => {
+      for (const other of el.pickerGrid.querySelectorAll('.picker-item')) {
+        other.classList.remove('is-selected');
+      }
+      item.classList.add('is-selected');
+    });
+    item.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        enterProfile(profile.id);
+      }
+    });
+
+    el.pickerGrid.append(item);
   }
 
+  // Netflix puts the add tile at the end of the row.
   const add = document.createElement('button');
-  add.className = 'chip chip-add';
-  add.textContent = '+';
-  add.title = 'New profile';
-  add.addEventListener('click', createProfile);
-  el.profileChips.append(add);
+  add.className = 'picker-item picker-add';
+  add.innerHTML = '<span class="picker-face">+</span><span class="picker-name">Add Profile</span>';
+  add.addEventListener('click', () => openProfileDialog(null));
+  el.pickerGrid.append(add);
 }
 
-async function switchProfile(id) {
-  if (!id || id === profiles.active) return;
-  profiles = await bridge.activateProfile(id);
+function paintFace(node, profile) {
+  const hue = profileHue(profile.name);
+  if (node.tagName === 'IMG') {
+    node.src = `app-icon://favicon/${profile.avatar}`;
+    return;
+  }
+  node.textContent = initials(profile.name);
+  node.style.background = `linear-gradient(140deg, hsl(${hue} 56% 48%), hsl(${(hue + 40) % 360} 52% 34%))`;
+}
+
+async function enterProfile(id) {
+  if (id && id !== profiles.active) {
+    profiles = await bridge.activateProfile(id);
+  }
   filter = '';
   el.search.value = '';
   selectedUrl = null;
   el.hero.hidden = true;
+  hidePicker();
   await load();
-  toast(`Switched to ${profiles.profiles.find((p) => p.id === id)?.name ?? 'profile'}`);
 }
 
-async function createProfile() {
-  const name = prompt('Name for the new profile');
-  if (name === null) return;
-  profiles = await bridge.createProfile(name.trim() || undefined);
-  filter = '';
-  el.search.value = '';
+/** Delete straight from the picker, with an inline confirm on the tile. */
+async function deleteProfileFromPicker(profile) {
+  const confirmBtn = el.pickerGrid.querySelector(
+    `.picker-item[data-id="${profile.id}"] .picker-tool[title="Delete"]`,
+  );
+  if (confirmBtn && !confirmBtn.classList.contains('is-armed')) {
+    confirmBtn.classList.add('is-armed');
+    confirmBtn.textContent = '!';
+    confirmBtn.title = 'Click again to delete';
+    setTimeout(() => {
+      if (!confirmBtn.isConnected) return;
+      confirmBtn.classList.remove('is-armed');
+      confirmBtn.textContent = '×';
+      confirmBtn.title = 'Delete';
+    }, 4000);
+    return;
+  }
+
+  profiles = await bridge.deleteProfile(profile.id);
   selectedUrl = null;
-  await load();
-  toast('Profile created');
+  renderPicker();
+  toast('Profile deleted');
 }
 
-function openProfileEditor(profile) {
-  editingProfileId = profile.id;
-  el.profileName.value = profile.name;
-  const only = profiles.profiles.length <= 1;
+el.pickerManage.addEventListener('click', () => showPicker({ manage: true }));
+
+/* ---------------------------- profile dialog --------------------------- */
+
+/**
+ * Open the profile dialog in create or edit mode.
+ *
+ * No window.prompt/confirm anywhere here on purpose: Electron implements
+ * neither, so they silently do nothing. That made the new-profile button look
+ * dead, and a test that stubbed them hid it.
+ */
+function openProfileDialog(profile) {
+  const creating = !profile;
+  editingProfileId = creating ? null : profile.id;
+  editingProfileAvatar = creating ? null : profile.avatar || null;
+
+  el.profileTitle.textContent = creating ? 'Add Profile' : 'Edit Profile';
+  el.profileSave.textContent = creating ? 'Create' : 'Save';
+  el.profileName.value = creating ? '' : profile.name;
+
+  const only = !creating && profiles.profiles.length <= 1;
+  el.profileDelete.hidden = creating;
   el.profileDelete.disabled = only;
-  el.profileMeta.textContent = only
-    ? 'This is your only profile, so it cannot be deleted.'
-    : `${profile.count} app${profile.count === 1 ? '' : 's'} in this profile.`;
+  el.profileDelete.textContent = 'Delete';
+  el.profileDelete.classList.remove('is-armed');
+
+  if (creating) {
+    el.profileMeta.textContent = 'Starts empty. You can add apps afterwards.';
+    el.profileHint.textContent = 'Each profile keeps its own set of apps.';
+  } else {
+    el.profileMeta.textContent = only
+      ? 'This is your only profile, so it cannot be deleted.'
+      : `${profile.count} app${profile.count === 1 ? '' : 's'} in this profile.`;
+    el.profileHint.textContent = 'The link of an app is never changed by editing it.';
+  }
+
+  paintAvatarPreview();
   el.profileEditor.showModal();
   el.profileName.focus();
   el.profileName.select();
 }
 
+function paintAvatarPreview() {
+  if (editingProfileAvatar) {
+    el.profileAvatarPreview.src = `app-icon://favicon/${editingProfileAvatar}`;
+  } else {
+    el.profileAvatarPreview.removeAttribute('src');
+    el.profileAvatarPreview.style.background = '';
+  }
+}
+
+el.profileAvatarInput.addEventListener('change', async (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  // Bytes rather than a path: a picked File has no usable path once it crosses
+  // context isolation.
+  let name = null;
+  try {
+    const bytes = await file.arrayBuffer();
+    ({ name } = await bridge.storeIconBytes(bytes, bridge.pathForFile(file)));
+  } catch {
+    name = null;
+  }
+  if (name) {
+    editingProfileAvatar = name;
+    paintAvatarPreview();
+  } else {
+    toast('That file is not a usable image');
+  }
+  e.target.value = '';
+});
+
+el.profileAvatarClear.addEventListener('click', () => {
+  editingProfileAvatar = null;
+  paintAvatarPreview();
+});
+
 el.profileForm.addEventListener('submit', async (e) => {
   e.preventDefault();
-  if (!editingProfileId) return;
-  profiles = await bridge.renameProfile(editingProfileId, el.profileName.value.trim());
+  const name = el.profileName.value.trim();
+
+  if (editingProfileId) {
+    profiles = await bridge.renameProfile(editingProfileId, name, {
+      avatar: editingProfileAvatar,
+    });
+  } else {
+    profiles = await bridge.createProfile(name || undefined);
+    if (editingProfileAvatar) {
+      profiles = await bridge.setProfileAvatar(profiles.active, editingProfileAvatar);
+    }
+    filter = '';
+    el.search.value = '';
+    selectedUrl = null;
+  }
+
   el.profileEditor.close();
+  renderPicker();
   await load();
-  toast('Profile saved');
+  toast(editingProfileId ? 'Profile saved' : 'Profile created');
 });
 
 el.profileCancel.addEventListener('click', () => el.profileEditor.close());
 
 el.profileDelete.addEventListener('click', async () => {
   if (!editingProfileId || profiles.profiles.length <= 1) return;
-  const profile = profiles.profiles.find((p) => p.id === editingProfileId);
-  if (!confirm(`Delete "${profile?.name}" and its ${profile?.count ?? 0} app(s)?`)) return;
+
+  // Two-step confirmation in place, since confirm() is unavailable.
+  if (!el.profileDelete.classList.contains('is-armed')) {
+    el.profileDelete.classList.add('is-armed');
+    el.profileDelete.textContent = 'Really delete?';
+    setTimeout(() => {
+      el.profileDelete.classList.remove('is-armed');
+      el.profileDelete.textContent = 'Delete';
+    }, 4000);
+    return;
+  }
+
   profiles = await bridge.deleteProfile(editingProfileId);
   selectedUrl = null;
   el.profileEditor.close();
+  renderPicker();
   await load();
   toast('Profile deleted');
 });
@@ -660,9 +847,15 @@ bridge.onSiteClosed(() => {
 
 async function load() {
   sites = await bridge.listSites();
-  await loadProfiles();
+  if (!profiles.profiles.length) await loadProfiles();
   setBarMode('launcher');
   await render();
 }
 
-load();
+// First paint goes through the picker, the way a TV service asks who is
+// watching. window.load() later on is the in-app reload and leaves it closed.
+(async () => {
+  await loadProfiles();
+  await load();
+  showPicker();
+})();

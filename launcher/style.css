@@ -292,90 +292,152 @@ body::before {
   opacity: 0.7;
 }
 
-/* ---------------- profile switcher ---------------- */
+/* ---------------- full-screen profile picker ---------------- */
 
-.profiles {
+.picker {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
   display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 34px;
+  padding: 40px;
+  background:
+    radial-gradient(900px 520px at 50% 0%, #131826 0%, var(--bg) 70%),
+    var(--bg);
+}
+
+.picker-title {
+  margin: 0;
+  font-size: 34px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  text-align: center;
+}
+
+.picker-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 26px;
+  justify-content: center;
+  max-width: 900px;
+}
+
+.picker-item {
+  width: 116px;
+  display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 12px;
-  margin: 0 0 14px;
-  flex: none;
-  min-height: 34px;
-}
-
-.profile-chips {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  overflow-x: auto;
-  scrollbar-width: none;
-  padding: 3px 0;
-}
-
-.profile-chips::-webkit-scrollbar {
-  display: none;
-}
-
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid transparent;
+  background: none;
+  border: none;
   color: var(--muted);
   font: inherit;
   font-size: 13px;
-  padding: 7px 15px;
-  border-radius: 999px;
   cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.2s var(--ease), color 0.2s var(--ease), border-color 0.2s var(--ease);
-}
-
-.chip:hover {
-  color: var(--text);
-  background: rgba(255, 255, 255, 0.09);
-}
-
-.chip.is-active {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: hsl(var(--glow-hue) 90% 60% / 0.7);
-  color: var(--text);
-}
-
-.chip-count {
-  font-size: 11px;
-  color: var(--muted);
-  background: rgba(0, 0, 0, 0.3);
-  border-radius: 999px;
-  padding: 1px 7px;
-}
-
-.chip-add {
-  padding: 7px 14px;
-  color: var(--text);
-  font-size: 15px;
-  line-height: 1;
-}
-
-.chip-edit {
-  border: none;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  font-size: 11px;
   padding: 0;
-  opacity: 0.7;
+  transition: color 0.2s var(--ease), transform 0.25s var(--ease);
 }
 
-.chip-edit:hover {
-  opacity: 1;
+.picker-item:hover {
+  color: var(--text);
+  transform: scale(1.06);
 }
 
-.profile-meta {
-  margin: 0 0 4px;
+.picker-item:focus-visible {
+  outline: none;
+  color: var(--text);
+}
+
+.picker-face {
+  width: 96px;
+  height: 96px;
+  border-radius: 12px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.06);
+  display: grid;
+  place-items: center;
+  font-size: 34px;
+  font-weight: 600;
+  color: #fff;
+  border: 3px solid transparent;
+  transition: border-color 0.2s var(--ease), box-shadow 0.25s var(--ease);
+}
+
+.picker-item:hover .picker-face,
+.picker-item:focus-visible .picker-face,
+.picker-item.is-selected .picker-face {
+  border-color: #fff;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.55);
+}
+
+.picker-add .picker-face {
+  background: transparent;
+  border: 3px solid rgba(255, 255, 255, 0.35);
+  font-size: 40px;
+  font-weight: 300;
+  color: var(--muted);
+}
+
+.picker-add:hover .picker-face {
+  border-color: #fff;
+  color: var(--text);
+}
+
+.picker-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker-tools {
+  display: flex;
+  gap: 6px;
+}
+
+.picker-tool {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: var(--text);
+  border-radius: 50%;
+  width: 26px;
+  height: 26px;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.picker-tool:hover {
+  background: hsl(var(--glow-hue) 85% 58%);
+}
+
+.picker-manage {
+  position: absolute;
+  right: 44px;
+  bottom: 38px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 8px 12px;
+  border-radius: 8px;
+}
+
+.picker-manage:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.picker-hint {
   color: var(--muted);
   font-size: 12px;
+  opacity: 0.7;
+  margin: 0;
 }
 
 /* ---------------- tabs ---------------- */

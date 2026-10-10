@@ -73,10 +73,6 @@
           </div>
         </section>
 
-        <div class="profiles" id="profiles">
-          <div class="profile-chips" id="profile-chips"></div>
-        </div>
-
         <div class="tabs" id="tabs">
           <button class="tab is-active" data-tab="home">For You</button>
           <button class="tab" data-tab="apps">Apps</button>
@@ -150,21 +146,48 @@
 
     <dialog id="profile-editor" class="editor">
       <form method="dialog" id="profile-form">
-        <h2>Profile</h2>
-        <label class="field">
+        <h2 id="profile-title">New profile</h2>
+        <div class="field">
+          <span>Picture</span>
+          <div class="icon-row">
+            <img id="profile-avatar-preview" class="icon-preview" alt="" />
+            <div class="icon-actions">
+              <label class="btn btn-small file-label" for="profile-avatar-input">Change&hellip;</label>
+              <input id="profile-avatar-input" type="file" accept="image/*" hidden />
+              <button type="button" id="profile-avatar-clear" class="btn btn-small btn-ghost">
+                Reset
+              </button>
+            </div>
+          </div>
+          <small>Used for this profile's tile. Square images look best.</small>
+        </div>
+
+        <div class="field">
           <span>Name</span>
           <input id="profile-name" type="text" autocomplete="off" />
-          <small>Each profile keeps its own set of apps.</small>
-        </label>
+          <small id="profile-hint">Each profile keeps its own set of apps.</small>
+        </div>
         <p id="profile-meta" class="profile-meta"></p>
         <div class="editor-actions">
-          <button type="button" id="profile-delete" class="btn btn-danger">Delete</button>
+          <button type="button" id="profile-delete" class="btn btn-danger" hidden>
+            Delete
+          </button>
           <span class="spacer"></span>
           <button type="button" id="profile-cancel" class="btn btn-ghost">Cancel</button>
-          <button type="submit" class="btn btn-primary">Save</button>
+          <button type="submit" id="profile-save" class="btn btn-primary">Create</button>
         </div>
       </form>
     </dialog>
+
+    <!-- Full-screen profile picker, shown on launch the way a TV service does. -->
+    <div id="picker" class="picker" hidden>
+      <h2 class="picker-title">Who's using TV Launcher?</h2>
+      <div class="picker-grid" id="picker-grid"></div>
+      <button id="picker-manage" class="picker-manage" hidden>Manage Profiles</button>
+      <p id="picker-hint" class="picker-hint">Press Enter on a profile to continue</p>
+    </div>
+
+    <dialog id="toast-dialog" class="editor"></dialog>
 
     <div id="toast" class="toast" hidden></div>
 

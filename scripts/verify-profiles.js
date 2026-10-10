@@ -1,23 +1,24 @@
 'use strict';
 
 /**
- * Drives the live launcher to check profiles: a new profile starts empty,
- * switching shows each profile's own apps, and deleting is refused for the last
- * one.
+ * Drives the live launcher through the Netflix-style picker.
+ *
+ * Everything is driven through the DOM. Nothing stubs window.prompt or
+ * window.confirm, because Electron implements neither -- stubbing them once
+ * hid a dead new-profile button behind a passing test.
  */
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const chips = () => [...document.querySelectorAll('#profile-chips .chip:not(.chip-add)')];
+const picker = () => document.getElementById('picker');
+const items = () => [...document.querySelectorAll('#picker-grid .picker-item')];
+const faces = () => [...document.querySelectorAll('#picker-grid .picker-item')].filter((n) => !n.classList.contains('picker-add'));
 const labels = () => [...document.querySelectorAll('.tile-label')].map((n) => n.textContent);
+const dialog = () => document.getElementById('profile-editor');
 
-async function ensureSites() {
-  for (let i = 0; i < 60; i += 1) {
-    if (document.querySelector('.tile') || document.querySelector('.chip')) break;
-    await wait(150);
-  }
-  for (let i = 0; i < 40; i += 1) {
-    if (chips().length) return true;
+async function waitForPicker() {
+  for (let i = 0; i < 80; i += 1) {
+    if (!picker().hidden && faces().length) return true;
     await wait(150);
   }
   return false;
@@ -27,104 +28,112 @@ async function ensureSites() {
   const out = [];
   const fail = (msg) => `FAIL ${msg} | ${out.join(' | ')}`;
 
-  if (!(await ensureSites())) return fail('profile switcher did not render');
+  if (!(await waitForPicker())) return fail('picker did not appear on launch');
 
-  // --- the default profile holds the seeded sites --------------------------
-  if (chips().length < 1) return fail('expected at least one profile chip');
-  out.push(`ok   ${chips().length} profile chip(s)`);
+  const start = faces().length;
+  out.push(`ok   picker shows ${start} profile(s) on launch`);
 
-  const seeded = labels();
-  if (!seeded.includes('Example')) return fail(`expected the seeded site, saw ${seeded.join()}`);
-  out.push(`ok   active profile shows ${seeded.length} app(s)`);
+  // The add tile sits at the end, as it does on a TV service.
+  const add = items()[items().length - 1];
+  if (!add.classList.contains('picker-add')) return fail('no Add Profile tile at the end');
+  out.push('ok   Add Profile tile is present');
 
-  // --- create a profile ----------------------------------------------------
-  const before = chips().length;
-  const nameInput = 'Streaming';
-  const originalPrompt = window.prompt;
-  window.prompt = () => nameInput;
+  if (!picker().hidden && picker().getBoundingClientRect().width < 400) {
+    return fail('picker is not full screen');
+  }
+  out.push('ok   picker covers the window');
 
-  document.querySelector('.chip-add').click();
-  await wait(1200);
+  // --- create through the picker -------------------------------------------
+  add.click();
+  await wait(600);
+  if (!dialog().open) return fail('Add Profile did not open a dialog');
+  if (document.getElementById('profile-title').textContent !== 'Add Profile') {
+    return fail('dialog is not in create mode');
+  }
+  if (!document.getElementById('profile-delete').hidden) {
+    return fail('delete should not be offered when creating');
+  }
+  out.push('ok   Add Profile opens the create dialog');
 
-  window.prompt = originalPrompt;
+  document.getElementById('profile-name').value = 'Streaming';
+  document.getElementById('profile-form').requestSubmit();
+  await wait(1600);
 
-  if (chips().length !== before + 1) return fail('new profile chip was not added');
+  if (faces().length !== start + 1) return fail('new profile was not added to the picker');
+  out.push('ok   profile created from the picker');
+
+  // --- enter it -------------------------------------------------------------
+  const created = faces()[faces().length - 1];
+  created.click();
+  await wait(1600);
+
+  if (!picker().hidden) return fail('picker did not close after choosing a profile');
   if (labels().length !== 0) return fail(`a new profile must be empty, saw ${labels().join()}`);
-  const active = document.querySelector('.chip.is-active');
-  if (!active || active.textContent.indexOf(nameInput) < 0) return fail('new profile is not active');
-  out.push(`ok   created "${nameInput}" and it is active and empty`);
+  out.push('ok   choosing a profile opens it empty');
 
-  // --- add to it, then switch away and back --------------------------------
+  // --- profiles stay separate ----------------------------------------------
   await bridge.addSite('cinebytv.com', 'Cineby', null);
   await window.load();
-  await wait(1200);
+  await wait(1300);
   if (!labels().includes('Cineby')) return fail('could not add to the new profile');
-  out.push('ok   added an app to the new profile');
 
-  chips()[0].click();
-  await wait(1400);
+  showPicker();
+  await wait(600);
+  faces()[0].click();
+  await wait(1500);
+
   const back = labels();
-  if (!back.includes('Example')) return fail('switching back did not show the first profile');
+  if (!back.includes('Example')) return fail('switching did not show the first profile');
   if (back.includes('Cineby')) return fail('the other profile leaked into this one');
-  out.push('ok   switching shows each profile’s own apps');
+  out.push('ok   each profile keeps its own apps');
 
-  chips()[1].click();
-  await wait(1200);
-  if (!labels().includes('Cineby') || labels().includes('Example')) {
-    return fail('switching to the second profile showed the wrong apps');
+  // --- manage mode offers rename and guarded delete -------------------------
+  showPicker({ manage: true });
+  await wait(600);
+  if (!picker().hidden && document.getElementById('picker-manage').hidden !== false) {
+    // Manage hides its own entry button; tools appear on the tiles instead.
   }
-  out.push('ok   switching back again restores the second profile');
+  const tools = document.querySelectorAll('#picker-grid .picker-tool');
+  if (tools.length !== faces().length * 2) {
+    return fail(`expected two tools per profile, saw ${tools.length}`);
+  }
+  out.push('ok   manage mode adds edit and delete to every profile');
 
-  // --- rename through the dialog -------------------------------------------
-  chips()[1].querySelector('.chip-edit').click();
+  // Rename via the picker.
+  const second = faces()[1];
+  second.querySelector('.picker-tool').click();
   await wait(700);
-  const dialog = document.getElementById('profile-editor');
-  if (!dialog.open) return fail('profile editor did not open');
+  if (!dialog().open) return fail('edit dialog did not open from the picker');
 
   document.getElementById('profile-name').value = 'Films';
   document.getElementById('profile-form').requestSubmit();
-  await wait(1200);
+  await wait(1500);
+  if (!faces()[1].textContent.includes('Films')) return fail('rename not reflected in the picker');
+  out.push('ok   renamed from the picker');
 
-  const listed = await bridge.listProfiles();
-  if (!listed.profiles.some((p) => p.name === 'Films')) return fail('rename did not persist');
-  out.push('ok   profile renamed');
-
-  // --- delete is offered while another profile remains, then refused --------
-  chips()[0].click();
-  await wait(1000);
-  chips()[0].querySelector('.chip-edit').click();
-  await wait(600);
-  const del = document.getElementById('profile-delete');
-  if (del.disabled) return fail('delete should be available while two profiles exist');
-  document.getElementById('profile-cancel').click();
+  // Delete asks first.
+  const del = document.querySelectorAll('#picker-grid .picker-tool')[3];
+  del.click();
   await wait(400);
+  if (!del.classList.contains('is-armed')) return fail('delete did not ask for confirmation');
+  if (faces().length !== 2) return fail('one click must not delete anything');
+  out.push('ok   delete asks for confirmation first');
 
-  // Remove the second profile for real, then the guard must engage. The edit
-  // affordance only exists on the active chip, so activate it first.
-  chips()[1].click();
-  await wait(1200);
-  const originalConfirm = window.confirm;
-  window.confirm = () => true;
-  chips()[1].querySelector('.chip-edit').click();
-  await wait(700);
-  document.getElementById('profile-delete').click();
-  await wait(1400);
-  window.confirm = originalConfirm;
+  del.click();
+  await wait(1600);
+  if (faces().length !== 1) return fail(`expected one profile left, saw ${faces().length}`);
+  out.push('ok   confirmed delete removes the profile');
 
-  if (chips().length !== 1) return fail(`expected one profile left, saw ${chips().length}`);
-  out.push('ok   deleting a profile leaves the others');
-
-  chips()[0].querySelector('.chip-edit').click();
-  await wait(700);
-  if (!document.getElementById('profile-delete').disabled) {
-    return fail('delete should be disabled when only one profile is left');
-  }
+  // --- the last profile is protected ---------------------------------------
+  showPicker({ manage: true });
+  await wait(600);
+  const lastDel = document.querySelectorAll('#picker-grid .picker-tool')[1];
+  if (!lastDel.disabled) return fail('delete should be disabled for the only profile');
   out.push('ok   the last profile cannot be deleted');
-  document.getElementById('profile-cancel').click();
-  await wait(300);
 
+  showPicker({ manage: false });
+  await wait(400);
   const end = await bridge.listProfiles();
   out.push(`ok   cleanup leaves ${end.profiles.length} profile`);
-
   return out.join(' | ');
 })();

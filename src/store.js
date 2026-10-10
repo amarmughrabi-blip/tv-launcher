@@ -90,10 +90,11 @@ function sanitiseName(name, fallback) {
   return text.slice(0, PROFILE_NAME_MAX);
 }
 
-function makeProfile(name, id, sites) {
+function makeProfile(name, id, sites, avatar) {
   return {
     id: id || DEFAULT_PROFILE_ID,
     name: sanitiseName(name, DEFAULT_PROFILE_NAME),
+    avatar: avatar || null,
     sites: Array.isArray(sites) ? sites.map(coerce).filter(Boolean) : [],
   };
 }
@@ -122,6 +123,7 @@ function canonicalise(state) {
     profiles: state.profiles.map((p) => ({
       id: p.id,
       name: p.name,
+      avatar: p.avatar || null,
       sites: p.sites.map((s) => ({ url: s.url, label: s.label, icon: s.icon || null })),
     })),
   };
@@ -162,7 +164,9 @@ function readState() {
 
   const profiles = data.profiles
     .filter((p) => p && typeof p.id === 'string')
-    .map((p, i) => makeProfile(p.name, p.id || `p${i}`, Array.isArray(p.sites) ? p.sites : []));
+    .map((p, i) =>
+      makeProfile(p.name, p.id || `p${i}`, Array.isArray(p.sites) ? p.sites : [], p.avatar),
+    );
   if (!profiles.length) return writeState(initialState());
 
   const active = profiles.some((p) => p.id === data.active) ? data.active : profiles[0].id;
@@ -175,14 +179,7 @@ function readState() {
 
 function writeState(state) {
   fs.mkdirSync(paths.appDir(), { recursive: true });
-  const ordered = {
-    active: state.active,
-    profiles: state.profiles.map((p) => ({
-      id: p.id,
-      name: p.name,
-      sites: p.sites,
-    })),
-  };
+  const ordered = canonicalise(state);
   fs.writeFileSync(paths.profilesFile(), `${JSON.stringify(ordered, null, 2)}\n`, 'utf8');
   return ordered;
 }
@@ -204,7 +201,12 @@ function listProfiles() {
   const state = readState();
   return {
     active: state.active,
-    profiles: state.profiles.map((p) => ({ id: p.id, name: p.name, count: p.sites.length })),
+    profiles: state.profiles.map((p) => ({
+      id: p.id,
+      name: p.name,
+      avatar: p.avatar || null,
+      count: p.sites.length,
+    })),
   };
 }
 
@@ -217,12 +219,27 @@ function createProfile(name) {
   return listProfiles();
 }
 
-function renameProfile(id, name) {
+/**
+ * Rename a profile, and optionally change its avatar.
+ *
+ * `fields` is explicit rather than read off `arguments`, so a caller cannot
+ * silently blank the avatar by omitting it.
+ */
+function renameProfile(id, name, fields = {}) {
   const state = readState();
   const profile = state.profiles.find((p) => p.id === id);
   if (!profile) return listProfiles();
-  profile.name = sanitiseName(name, profile.name);
-  return writeState(state) && listProfiles();
+
+  if (name !== undefined) profile.name = sanitiseName(name, profile.name);
+
+  if (fields && Object.prototype.hasOwnProperty.call(fields, 'avatar')) {
+    const next = fields.avatar || null;
+    if (profile.avatar && profile.avatar !== next) deleteIcon(profile.avatar);
+    profile.avatar = next;
+  }
+
+  writeState(state);
+  return listProfiles();
 }
 
 /** Delete a profile. The last one is kept, so there is always somewhere to go. */
@@ -327,6 +344,7 @@ function deleteIcon(name) {
 module.exports = {
   // profiles
   listProfiles,
+  setProfileAvatar: (id, avatar) => renameProfile(id, undefined, { avatar }),
   createProfile,
   renameProfile,
   deleteProfile,
