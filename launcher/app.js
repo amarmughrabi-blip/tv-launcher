@@ -13,6 +13,7 @@ const bridge = window.api;
 const el = {
   bar: document.getElementById('bar'),
   railAdd: document.getElementById('rail-add'),
+  stage: document.querySelector('.stage'),
   hero: document.getElementById('hero'),
   heroIcon: document.getElementById('hero-icon'),
   heroLabel: document.getElementById('hero-label'),
@@ -51,6 +52,7 @@ let editing = null; // the record being edited
 let editingIcon = null; // pending custom icon name
 let activeUrl = null; // site currently loaded in-window
 let tab = 'home';
+let selectedUrl = null; // survives re-renders so filtering does not reset the selection
 
 /* ------------------------------ helpers ------------------------------- */
 
@@ -139,6 +141,10 @@ function buildTile(record) {
     }
   });
   tile.addEventListener('focus', () => onTileFocus(tile));
+  tile.addEventListener('mousedown', () => onTileFocus(tile));
+
+  // Preserve the selection across re-renders so filtering does not reset it.
+  if (record.url === selectedUrl) tile.classList.add('is-selected');
 
   paintIcon(placeholder, record);
   return tile;
@@ -160,6 +166,7 @@ function onTileFocus(tile) {
     other.classList.remove('is-selected');
   }
   tile.classList.add('is-selected');
+  selectedUrl = tile.dataset.url;
 
   const track = tile.closest('.row-track');
   if (track) {
@@ -235,12 +242,20 @@ async function render() {
     for (const record of visible) track.append(buildTile(record));
   }
 
-  // Selection survives a re-render, which matters when editing a tile.
-  if (visible.length) {
-    const current = el.grid.querySelector('.tile.is-selected');
-    const first = el.grid.querySelector('.tile');
-    if (!current && first) selectTile(first);
+  // Re-select after a re-render, but never steal focus from the search field:
+  // typing re-renders on every keystroke, and focusing a tile here moved the
+  // caret out of the box after a single character.
+  const searching = document.activeElement === el.search;
+  const previous = el.grid.querySelector('.tile.is-selected');
+  const first = el.grid.querySelector('.tile');
+  if (!visible.length) return;
+  if (previous) return;
+  if (searching) {
+    // Keep the banner in sync without taking focus.
+    onTileFocus(first);
+    return;
   }
+  selectTile(first);
 }
 
 /** Replace a tile's badge with a real icon once the favicon lookup finishes. */
@@ -268,11 +283,15 @@ async function paintIcon(placeholder, record) {
   img.src = src;
   img.alt = '';
   img.addEventListener('error', () => placeholder.replaceWith(img), { once: true });
+
+  // Capture the tile before the swap: replacing the placeholder detaches it, so
+  // asking for its ancestor afterwards always yields null and the banner never
+  // picked up the real icon.
+  const tile = placeholder.closest('.tile');
   placeholder.replaceWith(img);
 
   // The banner mirrors the selected tile, so it has to pick the real icon up
   // once it arrives rather than staying on the letter badge.
-  const tile = placeholder.closest('.tile');
   if (tile && tile.classList.contains('is-selected')) showHero(tile);
 }
 
@@ -426,6 +445,10 @@ function setTab(next) {
   for (const button of document.querySelectorAll('.tab, .rail-btn[data-tab]')) {
     button.classList.toggle('is-active', button.dataset.tab === tab);
   }
+  // The banner belongs to the For You view. Leaving it up over the grid made
+  // that tab feel like a detail page rather than a list.
+  el.stage.classList.toggle('no-banner', tab !== 'home');
+
   // Opening Search focuses the field so typing works straight away.
   if (tab === 'search') {
     el.search.focus();

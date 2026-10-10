@@ -301,6 +301,15 @@ body::before {
   flex: none;
 }
 
+/* Apps is a plain list; the banner would make it read as a detail page. */
+.stage.no-banner .hero {
+  display: none;
+}
+
+.stage.no-banner .tabs {
+  margin-top: 6px;
+}
+
 .tab {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid transparent;
@@ -346,8 +355,8 @@ body::before {
   overflow-x: auto;
   scroll-snap-type: x proximity;
   /* Room for the selected tile's glow so it is never clipped at the edges. */
-  padding: 14px 10px 18px;
-  margin: 0 -10px;
+  padding: 16px 14px 22px;
+  margin: 0 -14px;
   scrollbar-width: none;
 }
 
@@ -366,7 +375,7 @@ body::before {
   gap: 10px;
   cursor: pointer;
   outline: none;
-  padding: 4px;
+  padding: 6px 0;
   border-radius: 18px;
   transition: transform 0.3s var(--ease), background 0.3s var(--ease), box-shadow 0.3s var(--ease);
 }
@@ -375,20 +384,31 @@ body::before {
   transform: translateY(-4px);
 }
 
-/* Selection is driven by a class as well as :focus, because the window does not
-   always hold OS focus and :focus alone then renders nothing. */
+/*
+ * The selection is a ring around the icon, not a panel behind the whole tile.
+ * A filled rectangle read as a card that "contained" the app, which looked
+ * wrong next to the plain unselected tiles.
+ */
 .tile:focus,
 .tile.is-selected {
-  transform: scale(1.16) translateY(-6px);
-  background: rgba(255, 255, 255, 0.06);
-  box-shadow:
-    0 0 0 3px hsl(var(--glow-hue) 92% 62% / 0.9),
-    0 0 34px hsl(var(--glow-hue) 92% 58% / 0.45);
+  transform: scale(1.06);
+  background: transparent;
+  box-shadow: none;
   z-index: 2;
 }
 
 .tile:focus-visible {
   outline: none;
+}
+
+.tile:focus .tile-icon,
+.tile.is-selected .tile-icon,
+.tile:focus .badge,
+.tile.is-selected .badge {
+  transform: scale(1.04);
+  box-shadow:
+    0 0 0 3px hsl(var(--glow-hue) 92% 62% / 0.95),
+    0 0 26px hsl(var(--glow-hue) 92% 58% / 0.5);
 }
 
 .tile-icon,

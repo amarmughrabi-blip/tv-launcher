@@ -29,6 +29,18 @@ const { waitForCdm } = require('./src/drm');
 
 const log = (...a) => console.log('[tv-launcher]', ...a);
 
+/*
+ * An uncaught exception in main otherwise surfaces as a modal error box that
+ * sits on screen with no detail. Log it instead, so the failure is visible in
+ * the output rather than as something the user has to dismiss.
+ */
+process.on('uncaughtException', (err) => {
+  log(`uncaught: ${err && err.stack ? err.stack : err}`);
+});
+process.on('unhandledRejection', (reason) => {
+  log(`unhandled rejection: ${reason && reason.stack ? reason.stack : reason}`);
+});
+
 // Must run before the app is ready.
 protocol.registerSchemesAsPrivileged([
   { scheme: 'app-icon', privileges: { standard: true, secure: true, supportFetchAPI: true } },
