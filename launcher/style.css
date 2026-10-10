@@ -158,7 +158,9 @@ body {
   height: 56px;
   border-radius: 12px;
   object-fit: contain;
-  background: #0f131b;
+  /* Light enough that dark favicons (GitHub, for one) stay legible against it. */
+  background: #e8ecf4;
+  padding: 6px;
 }
 
 /* No favicon and no custom icon: show the first letter instead. */
@@ -290,7 +292,8 @@ body {
   height: 48px;
   border-radius: 10px;
   object-fit: contain;
-  background: #0d1118;
+  background: #e8ecf4;
+  padding: 4px;
 }
 
 .icon-actions {

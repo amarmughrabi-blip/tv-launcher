@@ -100,6 +100,10 @@ async function fetchIcon(url, { net, log = () => {} } = {}) {
     try {
       const res = await net.fetch(candidate, { signal: timeoutSignal(FETCH_TIMEOUT_MS) });
       if (!res.ok) continue;
+      // Many sites answer /favicon.ico with an HTML page. Caching that produces
+      // a broken image, so require an actual image content type.
+      const type = (res.headers.get('content-type') || '').toLowerCase();
+      if (!type.startsWith('image/')) continue;
       const buf = Buffer.from(await res.arrayBuffer());
       if (!buf.length || buf.length > MAX_ICON_BYTES) continue;
       fs.mkdirSync(paths.cacheDir(), { recursive: true });

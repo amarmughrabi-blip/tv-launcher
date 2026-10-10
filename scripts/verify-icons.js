@@ -11,14 +11,23 @@
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** Ensure there is something to edit, so this works on a fresh profile. */
+/**
+ * Seed a site if the profile is empty, then re-render.
+ *
+ * Adding a site through the bridge does not repaint the grid on its own — the
+ * renderer's own add flow reloads after the IPC returns — so load() is called
+ * explicitly here or the grid stays empty and the check is flaky.
+ */
 async function ensureSites() {
-  for (let i = 0; i < 20; i += 1) {
-    if (document.querySelector('.tile')) return true;
+  for (let i = 0; i < 80; i += 1) {
+    if (typeof window.api?.listSites === 'function' && document.getElementById('grid')) break;
     await wait(150);
   }
+  if (document.querySelector('.tile')) return true;
+
   await window.api.addSite('https://example.com/', 'Example', null);
-  await wait(1200);
+  await window.load();
+  await wait(800);
   return Boolean(document.querySelector('.tile'));
 }
 

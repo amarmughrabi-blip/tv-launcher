@@ -71,6 +71,19 @@ function initials(label) {
   return (word[0] || '?').toUpperCase();
 }
 
+/**
+ * Stable hue from a label, so a site without a favicon still gets its own
+ * colour instead of every tile looking the same.
+ */
+function badgeHue(label) {
+  const text = String(label || '');
+  let hash = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    hash = (hash * 31 + text.charCodeAt(i)) % 360;
+  }
+  return hash;
+}
+
 /* ------------------------------ rendering ----------------------------- */
 
 async function render() {
@@ -156,6 +169,8 @@ function makeBadge(record) {
   const badge = document.createElement('div');
   badge.className = 'badge';
   badge.textContent = initials(record.label);
+  const hue = badgeHue(record.label);
+  badge.style.background = `linear-gradient(140deg, hsl(${hue} 58% 52%), hsl(${(hue + 38) % 360} 55% 42%))`;
   return badge;
 }
 
