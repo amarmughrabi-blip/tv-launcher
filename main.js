@@ -67,6 +67,18 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 const SITE_PARTITION = 'persist:sites';
+
+/** Last cosmetic injection, exposed for the live check. */
+let lastCosmeticsChars = 0;
+let cosmeticsApplied = 0;
+
+/**
+ * Counts pop-up attempts. The launcher must never hand anything to the system
+ * browser on a site's say-so, so the live check watches for the symptom rather
+ * than trusting a counter nobody increments.
+ */
+let popupsAttempted = 0;
+let popupsOpenedExternally = 0;
 /**
  * Height of the shared bar. Must match `.bar { height }` in launcher/style.css
  * or the site view leaves a gap the bar does not fill.
@@ -298,16 +310,22 @@ function openSite(url) {
     height: Math.max(0, mainWindow.getContentSize()[1] - viewTop),
   });
 
-  // Keep the site from navigating the whole app away, and hand external links
-  // to the system browser rather than trapping them in the view.
+  // Ads love window.open(): a popup or a new tab is the standard way to try to
+  // escape a blocked network request. Handing every one of those to the system
+  // browser meant a page could open your browser at will, with no click of
+  // yours involved -- the launcher was a way to launch anything. Deny them
+  // outright; "Open in Brave" remains the deliberate way out.
   view.webContents.setWindowOpenHandler(({ url: target }) => {
-    shell.openExternal(target);
+    popupsAttempted += 1;
+    log(`blocked pop-up to ${target.slice(0, 90)}`);
     return { action: 'deny' };
   });
+
   view.webContents.on('will-navigate', (event, target) => {
     if (!target.startsWith('http')) {
+      // Non-http schemes are how ad scripts try to reach the system browser.
       event.preventDefault();
-      shell.openExternal(target);
+      log(`blocked scheme navigation to ${target.slice(0, 90)}`);
     }
   });
 
@@ -325,6 +343,32 @@ function openSite(url) {
   mainWindow.contentView.addChildView(view);
   siteView = view;
   showChrome();
+
+  // Hide the ads that live in the page markup. Network blocking alone leaves
+  // them behind as invisible overlays that swallow clicks meant for the site.
+  // Re-applied on every navigation because a single injection would not survive
+  // the page replacing its own document.
+  const applyCosmetics = async () => {
+    if (siteView !== view || view.webContents.isDestroyed()) return;
+    if (!blocker || !blocker.ready) return;
+    const current = view.webContents.getURL();
+    if (!current || !current.startsWith('http')) return;
+    const { styles } = blocker.cosmeticsFor(current);
+    if (!styles) return;
+    try {
+      await view.webContents.insertCSS(styles);
+      lastCosmeticsChars = styles.length;
+      cosmeticsApplied += 1;
+      log(`hid ad elements on ${current.slice(0, 60)} (${styles.length} bytes of CSS)`);
+    } catch (err) {
+      log(`could not apply cosmetic CSS: ${err.message}`);
+    }
+  };
+  view.webContents.on('did-finish-load', applyCosmetics);
+  view.webContents.on('did-navigate-in-page', (event, target, isMainFrame) => {
+    if (isMainFrame) applyCosmetics();
+  });
+
   view.webContents.loadURL(url).catch((err) => log(`load failed: ${err.message}`));
 
   mainWindow.on('resize', () => trackViewBounds({ animate: false }));
@@ -493,6 +537,37 @@ if (process.env.TVL_DEBUG_INPUT === '1') {
     handleSitePointer(y);
     return { ok: true };
   });
+  ipcMain.handle('debug:cosmetics', () => ({
+    lastStyles: lastCosmeticsChars,
+    applied: cosmeticsApplied,
+  }));
+
+  ipcMain.handle('debug:popups', () => ({ attempted: popupsAttempted }));
+
+  // Run script inside the site view. The live ad checks need to act on the
+  // loaded page itself; probing from the launcher would exercise the wrong
+  // renderer entirely.
+  ipcMain.handle('debug:site-eval', async (_e, { code }) => {
+    if (!siteView || siteView.webContents.isDestroyed()) return null;
+    try {
+      return await siteView.webContents.executeJavaScript(code, true);
+    } catch (err) {
+      return `error: ${err.message}`;
+    }
+  });
+
+  // Counts anything handed to the system browser. Installed unconditionally:
+  // if a site ever reaches the browser, the count has to show it even when
+  // nobody is running a check.
+  const realOpenExternal = shell.openExternal;
+  shell.openExternal = (target) => {
+    popupsOpenedExternally += 1;
+    log(`system browser opened by ${target.slice(0, 90)}`);
+    return realOpenExternal.call(shell, target);
+  };
+
+  ipcMain.handle('debug:external-opens', () => ({ openedExternally: popupsOpenedExternally }));
+
   ipcMain.handle('debug:chrome-state', () => ({
     visible: chromeVisible,
     hasSite: Boolean(siteView),

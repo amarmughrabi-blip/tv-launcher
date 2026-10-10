@@ -97,3 +97,70 @@ test('stats separate blocked from allowed', () => {
   assert.strictEqual(b.summary.blocked, 1);
   assert.strictEqual(b.summary.allowed, 1);
 });
+// --- cosmetic (element-hiding) filtering -------------------------------------
+//
+// The ads that cause the reported symptom are not requests at all: they are
+// markup in the page, delivered as transparent overlays stacked on top of the
+// content. Network blocking cannot touch them, so cosmetic filtering is the
+// only thing that removes them.
+
+test('cosmeticsFor returns CSS, not an empty list', () => {
+  const b = new Blocker({ log: () => {} });
+  b.engine = {
+    getCosmeticsFilters: () => ({ styles: '.ad-slot { display: none !important; }', scripts: [] }),
+  };
+  const out = b.cosmeticsFor('https://example.com/watch');
+  assert.match(out.styles, /ad-slot/);
+});
+
+test('cosmeticsFor passes the hostname through, dropping a www prefix', () => {
+  let seen = null;
+  const b = new Blocker({ log: () => {} });
+  b.engine = {
+    getCosmeticsFilters: (opts) => {
+      seen = opts;
+      return { styles: '', scripts: [] };
+    },
+  };
+  b.cosmeticsFor('https://www.example.com/watch');
+  assert.strictEqual(seen.hostname, 'www.example.com');
+  assert.strictEqual(seen.domain, 'example.com');
+  assert.strictEqual(seen.url, 'https://www.example.com/watch');
+});
+
+test('cosmeticsFor is inert without an engine or a usable URL', () => {
+  const fresh = new Blocker({ log: () => {} });
+  assert.deepStrictEqual(fresh.cosmeticsFor('https://example.com/'), { styles: '', scripts: [] });
+
+  const b = new Blocker({ log: () => {} });
+  b.engine = { getCosmeticsFilters: () => ({ styles: 'x' }) };
+  assert.deepStrictEqual(b.cosmeticsFor('not a url'), { styles: '', scripts: [] });
+});
+
+test('cosmeticsFor survives a throwing engine', () => {
+  const b = new Blocker({ log: () => {} });
+  b.engine = {
+    getCosmeticsFilters: () => {
+      throw new Error('boom');
+    },
+  };
+  assert.deepStrictEqual(b.cosmeticsFor('https://example.com/'), { styles: '', scripts: [] });
+});
+
+test('the engine is built with cosmetic filtering enabled', () => {
+  // enableHtmlFiltering defaults to false, and getCosmeticsFilters is a no-op
+  // without it -- the engine would parse tens of thousands of element-hiding
+  // rules and then discard every one of them.
+  const src = require('node:fs').readFileSync(require.resolve('../src/blocker'), 'utf8');
+  assert.match(src, /enableHtmlFiltering:\s*true/);
+});
+
+test('cosmetics come from getCosmeticsFilters, not the empty getHtmlFilters bucket', () => {
+  // getHtmlFilters reads a bucket the engine leaves unpopulated and returns
+  // nothing at all, silently. Using it looks like it works and hides nothing.
+  const src = require('node:fs').readFileSync(require.resolve('../src/blocker'), 'utf8');
+  // Comments may name the wrong API to explain why it is wrong; code may not.
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  assert.match(code, /getCosmeticsFilters/);
+  assert.doesNotMatch(code, /getHtmlFilters/);
+});

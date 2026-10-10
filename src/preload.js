@@ -48,6 +48,10 @@ contextBridge.exposeInMainWorld('api', {
   openInBrave: (url) => ipcRenderer.invoke('brave:open', { url }),
   chromeVisible: (visible) => ipcRenderer.invoke('chrome:visible', visible),
   chromeHover: (hovering) => ipcRenderer.invoke('chrome:hover', hovering),
+  debugSiteEval: (code) => ipcRenderer.invoke('debug:site-eval', { code }),
+  debugExternalOpens: () => ipcRenderer.invoke('debug:external-opens'),
+  debugPopups: () => ipcRenderer.invoke('debug:popups'),
+  debugCosmetics: () => ipcRenderer.invoke('debug:cosmetics'),
   onChromeVisible: (fn) => {
     ipcRenderer.on('chrome:visible', (_e, visible) => fn(visible));
   },
