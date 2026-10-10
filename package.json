@@ -9,11 +9,12 @@
     "gate": "./scripts/run.sh scripts/drm-gate.js",
     "setup": "./scripts/setup-ecs.sh",
     "start": "./scripts/run.sh",
-    "verify:editing": "TVL_VERIFY=scripts/verify-editing.js ./scripts/run.sh",
-    "verify:browsing": "TVL_VERIFY=scripts/verify-browsing.js ./scripts/run.sh",
-    "verify:icons": "node scripts/make-fixture.js && TVL_VERIFY=scripts/verify-icons.js ./scripts/run.sh",
+    "verify:editing": "./scripts/verify.sh scripts/verify-editing.js",
+    "verify:browsing": "./scripts/verify.sh scripts/verify-browsing.js",
+    "verify:icons": "node scripts/make-fixture.js && ./scripts/verify.sh scripts/verify-icons.js",
     "verify:blocking": "./scripts/run.sh scripts/verify-blocking.js",
-    "verify": "npm test && npm run verify:blocking && npm run verify:editing && npm run verify:browsing && npm run verify:icons"
+    "verify": "npm test && npm run verify:blocking && npm run verify:editing && npm run verify:browsing && npm run verify:icons && npm run verify:chrome",
+    "verify:chrome": "./scripts/verify.sh scripts/verify-chrome.js"
   },
   "dependencies": {
     "@ghostery/adblocker": "^2.20.1"

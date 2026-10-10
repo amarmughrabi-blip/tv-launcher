@@ -41,6 +41,13 @@ const TOOLBAR_H = 52;
 let mainWindow = null;
 let siteView = null;
 let blocker = null;
+/** The bar auto-hides over a site, and the site then gets the whole window. */
+let chromeVisible = true;
+
+/** Space the site view must leave at the top for the shared bar. */
+function chromeInset() {
+  return chromeVisible ? TOOLBAR_H : 0;
+}
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -80,7 +87,7 @@ function openSite(url) {
   const [width, height] = mainWindow.getContentSize();
   // Inset below the shared toolbar so Back and "Open in Brave" stay reachable.
   // WebContentsView has no auto-resize, so bounds are maintained on resize.
-  view.setBounds({ x: 0, y: TOOLBAR_H, width, height: Math.max(0, height - TOOLBAR_H) });
+  view.setBounds({ x: 0, y: chromeInset(), width, height: Math.max(0, height - chromeInset()) });
 
   // Keep the site from navigating the whole app away, and hand external links
   // to the system browser rather than trapping them in the view.
@@ -137,7 +144,8 @@ function destroySiteView() {
 function trackViewBounds() {
   if (!siteView || !mainWindow) return;
   const [width, height] = mainWindow.getContentSize();
-  siteView.setBounds({ x: 0, y: TOOLBAR_H, width, height: Math.max(0, height - TOOLBAR_H) });
+  const top = chromeInset();
+  siteView.setBounds({ x: 0, y: top, width, height: Math.max(0, height - top) });
 }
 
 function sendToLauncher(channel, payload) {
@@ -161,6 +169,15 @@ ipcMain.handle('sites:reorder', (_e, { url, direction }) => store.reorder(url, d
 
 ipcMain.handle('icon:store', (_e, { sourcePath }) => {
   const name = icons.storeIcon(sourcePath, icons.electronCodec());
+  return { name };
+});
+
+// The picked file has no dependable path once it crosses context isolation, so
+// its bytes are sent instead and normalised from those.
+ipcMain.handle('icon:store-bytes', (_e, { bytes, sourcePath }) => {
+  const codec = icons.electronCodec();
+  const byBytes = bytes ? icons.storeIconBytes(new Uint8Array(bytes), codec) : null;
+  const name = byBytes || (sourcePath ? icons.storeIcon(sourcePath, codec) : null);
   return { name };
 });
 
@@ -194,6 +211,14 @@ ipcMain.handle('site:current', () => {
     title: siteView.webContents.getTitle(),
     loading: siteView.webContents.isLoading(),
   };
+});
+
+// The launcher reports whether the shared bar is showing; the site view grows
+// into the space it vacates so a page really does fill the window.
+ipcMain.handle('chrome:visible', (_e, visible) => {
+  chromeVisible = visible !== false;
+  trackViewBounds();
+  return { ok: true, inset: chromeInset() };
 });
 
 ipcMain.handle('brave:available', () => Boolean(brave.detect()));

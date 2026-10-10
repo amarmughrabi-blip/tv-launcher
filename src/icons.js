@@ -31,6 +31,12 @@ function iconName(sourcePath) {
   return `${digest.slice(0, HASH_LEN)}.png`;
 }
 
+/** Content-addressed name, for icons that arrive as bytes. */
+function iconNameFromBytes(buf) {
+  const digest = crypto.createHash('sha256').update(toBuffer(buf)).digest('hex');
+  return `${digest.slice(0, HASH_LEN)}.png`;
+}
+
 function iconPath(name) {
   return path.join(paths.iconsDir(), name);
 }
@@ -51,8 +57,36 @@ function storeIcon(sourcePath, codec) {
   } catch {
     return null;
   }
-  if (!buf.length) return null;
 
+  // Named by source path, so re-picking the same file replaces its entry rather
+  // than adding a near-duplicate.
+  return writeNormalised(buf, codec, iconName(sourcePath));
+}
+
+/**
+ * Normalise image bytes into the store.
+ *
+ * Used by the picker's own file, which has no reliable filesystem path once it
+ * crosses the context isolation boundary. Naming is by content hash, so the same
+ * image picked twice is stored once.
+ *
+ * @returns {string|null} stored icon name, or null if the bytes are not an image
+ */
+function storeIconBytes(bytes, codec) {
+  const buf = toBuffer(bytes);
+  if (!buf || !buf.length) return null;
+  return writeNormalised(buf, codec, iconNameFromBytes(buf));
+}
+
+function toBuffer(bytes) {
+  if (Buffer.isBuffer(bytes)) return bytes;
+  if (bytes instanceof ArrayBuffer) return Buffer.from(new Uint8Array(bytes));
+  if (ArrayBuffer.isView(bytes)) return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  return null;
+}
+
+/** Decode, downscale and write. Returns the name, or null if it is not an image. */
+function writeNormalised(buf, codec, name) {
   let normalised;
   try {
     const decoded = codec.decode(buf);
@@ -63,7 +97,6 @@ function storeIcon(sourcePath, codec) {
   }
   if (!normalised || !normalised.length) return null;
 
-  const name = iconName(sourcePath);
   try {
     fs.mkdirSync(paths.iconsDir(), { recursive: true });
     fs.writeFileSync(iconPath(name), normalised);
@@ -127,8 +160,10 @@ module.exports = {
   ICON_SIZE,
   HASH_LEN,
   iconName,
+  iconNameFromBytes,
   iconPath,
   storeIcon,
+  storeIconBytes,
   resolveIcon,
   deleteIcon,
   electronCodec,

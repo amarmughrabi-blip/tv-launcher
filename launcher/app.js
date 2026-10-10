@@ -11,6 +11,7 @@
 const bridge = window.api;
 
 const el = {
+  bar: document.getElementById('bar'),
   grid: document.getElementById('grid'),
   empty: document.getElementById('empty'),
   search: document.getElementById('search'),
@@ -197,7 +198,59 @@ function setBarMode(mode, title = '') {
   el.back.hidden = !siteOpen;
   el.siteTitle.hidden = !siteOpen;
   el.siteTitle.textContent = title;
+
+  if (siteOpen) startAutoHide();
+  else stopAutoHide();
 }
+
+/*
+ * In site mode the bar gets out of the way so the page fills the window, the way
+ * a TV player does. It comes back on pointer movement near the top edge, and is
+ * pinned open whenever the pointer is already up there.
+ */
+const AUTO_HIDE_MS = 2200;
+let hideTimer = null;
+
+function showBar() {
+  el.bar.classList.remove('bar-hidden');
+  bridge.chromeVisible(true);
+}
+
+function hideBar() {
+  el.bar.classList.add('bar-hidden');
+  bridge.chromeVisible(false);
+}
+
+function scheduleHide() {
+  clearTimeout(hideTimer);
+  hideTimer = setTimeout(hideBar, AUTO_HIDE_MS);
+}
+
+function startAutoHide() {
+  showBar();
+  scheduleHide();
+}
+
+function stopAutoHide() {
+  clearTimeout(hideTimer);
+  showBar();
+}
+
+document.addEventListener('mousemove', (e) => {
+  // Only auto-hide while a site is up; the launcher needs its controls.
+  if (el.search.hidden && e.clientY < 90) showBar(), scheduleHide();
+});
+
+document.addEventListener('mouseleave', () => {
+  if (el.search.hidden) hideBar();
+});
+
+// Touching the bar should keep it up for a moment rather than vanishing.
+el.bar.addEventListener('mouseenter', () => {
+  clearTimeout(hideTimer);
+  bridge.chromeVisible(true);
+});
+el.bar.addEventListener('mouseleave', scheduleHide);
 
 el.back.addEventListener('click', goBack);
 
@@ -235,12 +288,17 @@ el.editForm.addEventListener('submit', async (e) => {
 el.editIconInput.addEventListener('change', async (e) => {
   const file = e.target.files && e.target.files[0];
   if (!file) return;
-  const path = bridge.pathForFile(file);
-  if (!path) {
-    toast('Could not read that image');
-    return;
+
+  // Bytes are the reliable route: a picked File has no dependable path once it
+  // crosses context isolation. The path is passed along as a fallback only.
+  let name = null;
+  try {
+    const bytes = await file.arrayBuffer();
+    ({ name } = await bridge.storeIconBytes(bytes, bridge.pathForFile(file)));
+  } catch {
+    name = null;
   }
-  const { name } = await bridge.storeIcon(path);
+
   if (name) {
     editingIcon = name;
     await paintEditPreview();

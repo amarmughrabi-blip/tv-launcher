@@ -19,6 +19,8 @@ contextBridge.exposeInMainWorld('api', {
 
   chooseIcon: () => ipcRenderer.invoke('icon:choose'),
   storeIcon: (sourcePath) => ipcRenderer.invoke('icon:store', { sourcePath }),
+  storeIconBytes: (bytes, sourcePath) =>
+    ipcRenderer.invoke('icon:store-bytes', { bytes, sourcePath }),
   // A File from <input type="file"> carries no usable path under context
   // isolation; this is the supported way to turn one into a filesystem path.
   pathForFile: (file) => {
@@ -37,6 +39,7 @@ contextBridge.exposeInMainWorld('api', {
 
   braveAvailable: () => ipcRenderer.invoke('brave:available'),
   openInBrave: (url) => ipcRenderer.invoke('brave:open', { url }),
+  chromeVisible: (visible) => ipcRenderer.invoke('chrome:visible', visible),
 
   // The site surface covers the launcher, so the main process reports when a
   // site is open or closed and the toolbar swaps accordingly.

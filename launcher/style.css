@@ -40,6 +40,17 @@ body {
   padding: 0 26px;
   height: 52px;
   flex: none;
+  position: relative;
+  z-index: 2;
+  background: linear-gradient(to bottom, rgba(11, 13, 18, 0.97), rgba(11, 13, 18, 0.86));
+  transition: transform 0.22s ease, opacity 0.22s ease;
+}
+
+/* Auto-hidden in site mode so the page gets the whole window. */
+.bar-hidden {
+  transform: translateY(-100%);
+  opacity: 0;
+  pointer-events: none;
 }
 
 .site-title {
