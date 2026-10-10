@@ -29,6 +29,26 @@ const { waitForCdm } = require('./src/drm');
 
 const log = (...a) => console.log('[tv-launcher]', ...a);
 
+// Give the app its own identity and profile directory. Without this it shares
+// ~/.config/Electron with every other Electron app on the machine.
+app.setName('tv-launcher');
+app.setPath('userData', path.join(app.getPath('appData'), 'tv-launcher'));
+app.setPath('sessionData', path.join(app.getPath('userData'), 'session'));
+
+/*
+ * One instance only.
+ *
+ * Without this, launching the app again from the menu while it is already
+ * running starts a second copy, and both drive the same user-data directory.
+ * That produced "Database IO error" from the service worker store and left
+ * stale windows — including ones showing an error box — sitting on screen.
+ */
+const isPrimary = app.requestSingleInstanceLock();
+if (!isPrimary) {
+  log('another instance is already running; exiting');
+  app.quit();
+}
+
 /*
  * An uncaught exception in main otherwise surfaces as a modal error box that
  * sits on screen with no detail. Log it instead, so the failure is visible in
@@ -526,7 +546,15 @@ function resolveIconFile(name) {
   return null;
 }
 
-app.whenReady().then(async () => {
+app.on('second-instance', () => {
+  // Surface the window the user already has instead of leaving them to find it.
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+});
+
+if (isPrimary) app.whenReady().then(async () => {
   paths.ensure();
   protocol.handle('app-icon', (request) => {
     // basename() strips any directory component, so the name is a single
