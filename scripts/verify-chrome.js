@@ -83,6 +83,18 @@ async function ensureSites() {
   }
   out.push('ok   bar returns when the pointer nears the top');
 
+  // The bar has to be genuinely on screen, not merely marked visible: the
+  // reveal animation drives both the bar's offset and the view's bounds from
+  // the main process, and those used to be able to disagree.
+  const backTop = Math.round(document.getElementById('back').getBoundingClientRect().top);
+  if (!(backTop >= 0 && backTop < 60)) {
+    return fail(`Back is not reachable after reveal (top=${backTop}px)`);
+  }
+  if (!afterMove || afterMove.chromeOffset !== 0 || afterMove.viewTop <= 0) {
+    return fail(`geometry did not follow the reveal (${JSON.stringify(afterMove)})`);
+  }
+  out.push(`ok   Back is on screen and the page made room for it`);
+
   // And it must hide again once the pointer moves away from the top. Bounded
   // rather than tied to the idle constant, since the countdown starts when the
   // bar was revealed, not when the pointer left.

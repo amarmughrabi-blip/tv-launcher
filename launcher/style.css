@@ -69,11 +69,11 @@ body::before {
   padding: 0 26px 0 calc(var(--rail-w) + 20px);
   flex: none;
   background: linear-gradient(to bottom, rgba(6, 7, 11, 0.96), rgba(6, 7, 11, 0.7) 70%, transparent);
-  transition: transform 0.26s var(--ease), opacity 0.26s var(--ease);
+  /* Driven from the main process, in step with the site view's bounds. */
+  transform: translateY(var(--chrome-offset, 0px));
 }
 
 .bar-hidden {
-  transform: translateY(-100%);
   opacity: 0;
   pointer-events: none;
 }

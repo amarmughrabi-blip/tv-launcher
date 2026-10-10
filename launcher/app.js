@@ -351,6 +351,18 @@ function setBarMode(mode, title = '') {
  * site view covers the whole window, so this page receives no pointer events at
  * all and could never reveal it. All this side does is reflect the decision.
  */
+/*
+ * The bar's position is driven from the main process on the same clock that
+ * moves the site view, so the two cannot disagree. A CSS transition here could
+ * be throttled in an unfocused window and leave the bar stranded off-screen
+ * while the view had already moved.
+ */
+document.documentElement.style.setProperty('--chrome-offset', '0px');
+
+bridge.onChromeOffset((offset) => {
+  document.documentElement.style.setProperty('--chrome-offset', `${offset}px`);
+});
+
 bridge.onChromeVisible((visible) => {
   el.bar.classList.toggle('bar-hidden', !visible);
 });

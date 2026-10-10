@@ -51,6 +51,9 @@ contextBridge.exposeInMainWorld('api', {
   onChromeVisible: (fn) => {
     ipcRenderer.on('chrome:visible', (_e, visible) => fn(visible));
   },
+  onChromeOffset: (fn) => {
+    ipcRenderer.on('chrome:offset', (_e, offset) => fn(offset));
+  },
   // Present only when the app is started with TVL_DEBUG_INPUT=1.
   debugMouseMove: (x, y) => ipcRenderer.invoke('debug:mouse-move', { x, y }),
   debugChromeState: () => ipcRenderer.invoke('debug:chrome-state'),

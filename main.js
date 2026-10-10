@@ -67,8 +67,11 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 const SITE_PARTITION = 'persist:sites';
-/** Height of the always-visible bar the launcher and the site view share. */
-const TOOLBAR_H = 52;
+/**
+ * Height of the shared bar. Must match `.bar { height }` in launcher/style.css
+ * or the site view leaves a gap the bar does not fill.
+ */
+const TOOLBAR_H = 56;
 
 let mainWindow = null;
 let siteView = null;
@@ -84,13 +87,13 @@ const AUTO_HIDE_MS = 1200;
  * Generous reveal band. A tight one feels unresponsive because the bar is already
  * gone by the time the pointer reaches the very top of the screen.
  */
-const REVEAL_ZONE_PX = 130;
+const REVEAL_ZONE_PX = 200;
 /**
  * Hiding needs a wider band than revealing. Without the gap the bar flickers
  * when the pointer sits right on the boundary, because every mouse move toggles
  * it.
  */
-const HIDE_ZONE_PX = 230;
+const HIDE_ZONE_PX = 300;
 const BOUNDS_ANIM_MS = 280;
 
 /** Space the site view must leave at the top for the shared bar. */
@@ -100,7 +103,10 @@ function chromeInset() {
 
 function showChrome({ schedule = true } = {}) {
   if (chromeVisible) {
-    // Already up; just hold it open rather than restarting the countdown.
+    // Already up, but the geometry still has to agree with that: returning early
+    // without re-applying left the bar off-screen while main believed it was
+    // visible.
+    trackViewBounds();
     if (schedule) scheduleHideChrome();
     return;
   }
@@ -160,9 +166,15 @@ function handleSitePointer(y) {
 
 /**
  * The view grows into the space the bar vacates. Jumping the bounds would snap
- * the page by 52px on every reveal, so it is interpolated instead.
+ * the page by 56px on every reveal, so it is interpolated instead.
+ *
+ * The bar's own offset is animated on the same clock, from here, rather than by
+ * a CSS transition in the renderer. Two independent animations for one piece of
+ * state can disagree -- the view moves while the bar does not -- and that leaves
+ * either an unreachable bar or a bare gap at the top.
  */
 let viewTop = 0;
+let chromeOffset = 0;
 let boundsTimer = null;
 
 function applyViewBounds() {
@@ -171,34 +183,53 @@ function applyViewBounds() {
   siteView.setBounds({ x: 0, y: viewTop, width, height: Math.max(0, height - viewTop) });
 }
 
+function applyChromeOffset() {
+  sendToLauncher('chrome:offset', chromeOffset);
+}
+
 function trackViewBounds({ animate = true } = {}) {
-  if (!siteView || !mainWindow || mainWindow.isDestroyed()) return;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
   const target = chromeInset();
+  const targetOffset = chromeVisible ? 0 : -TOOLBAR_H;
   const from = viewTop;
+  const fromOffset = chromeOffset;
 
   clearInterval(boundsTimer);
   boundsTimer = null;
 
-  if (!animate || from === target) {
+  if (!animate || (from === target && fromOffset === targetOffset)) {
     viewTop = target;
+    chromeOffset = targetOffset;
     applyViewBounds();
+    applyChromeOffset();
     return;
   }
 
   const delta = target - from;
+  const deltaOffset = targetOffset - fromOffset;
   const started = Date.now();
+  // Started on the next macrotask, not inline. An interval created directly
+  // inside an IPC handler never ticked: the bar was left half-applied and
+  // unreachable, which is exactly the "back button will not appear" report.
+  setImmediate(() => {
   boundsTimer = setInterval(() => {
     const t = Math.min(1, (Date.now() - started) / BOUNDS_ANIM_MS);
     // easeOutCubic: leaves quickly, settles gently.
-    viewTop = Math.round(from + delta * (1 - (1 - t) ** 3));
+    const eased = 1 - (1 - t) ** 3;
+    viewTop = Math.round(from + delta * eased);
+    chromeOffset = Math.round(fromOffset + deltaOffset * eased);
     applyViewBounds();
+    applyChromeOffset();
     if (t >= 1) {
       clearInterval(boundsTimer);
       boundsTimer = null;
       viewTop = target;
+      chromeOffset = targetOffset;
       applyViewBounds();
+      applyChromeOffset();
     }
   }, 16);
+  });
 }
 
 function createWindow() {
@@ -394,6 +425,22 @@ ipcMain.handle('chrome:visible', (_e, visible) => {
   return { ok: true, inset: chromeInset() };
 });
 
+// Escape should get the user out whatever has focus, not only when the site
+// surface happens to be the focused one.
+app.on('web-contents-created', (_event, contents) => {
+  contents.on('before-input-event', (event, input) => {
+    if (!siteView || contents !== siteView.webContents) return;
+    if (input.type !== 'keyDown') return;
+    const back = input.key === 'Escape' || (input.key === 'Backspace' && !input.control);
+    const altLeft = input.key === 'Left' && input.alt;
+    if (back || altLeft) {
+      event.preventDefault();
+      destroySiteView();
+      sendToLauncher('site:closed');
+    }
+  });
+});
+
 ipcMain.handle('chrome:hover', (_e, hovering) => {
   if (!siteView) return { ok: true };
   if (hovering) {
@@ -432,6 +479,8 @@ if (process.env.TVL_DEBUG_INPUT === '1') {
     visible: chromeVisible,
     hasSite: Boolean(siteView),
     lastPointerY,
+    viewTop,
+    chromeOffset,
   }));
   // Dispatches a genuine pointer move into the loaded page and reports whether
   // the preload picked it up, so the real path is checked rather than assumed.
