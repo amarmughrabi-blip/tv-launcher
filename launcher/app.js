@@ -198,59 +198,20 @@ function setBarMode(mode, title = '') {
   el.back.hidden = !siteOpen;
   el.siteTitle.hidden = !siteOpen;
   el.siteTitle.textContent = title;
-
-  if (siteOpen) startAutoHide();
-  else stopAutoHide();
 }
 
 /*
- * In site mode the bar gets out of the way so the page fills the window, the way
- * a TV player does. It comes back on pointer movement near the top edge, and is
- * pinned open whenever the pointer is already up there.
+ * Whether the bar hides is decided in the main process: when it is hidden the
+ * site view covers the whole window, so this page receives no pointer events at
+ * all and could never reveal it. All this side does is reflect the decision.
  */
-const AUTO_HIDE_MS = 2200;
-let hideTimer = null;
-
-function showBar() {
-  el.bar.classList.remove('bar-hidden');
-  bridge.chromeVisible(true);
-}
-
-function hideBar() {
-  el.bar.classList.add('bar-hidden');
-  bridge.chromeVisible(false);
-}
-
-function scheduleHide() {
-  clearTimeout(hideTimer);
-  hideTimer = setTimeout(hideBar, AUTO_HIDE_MS);
-}
-
-function startAutoHide() {
-  showBar();
-  scheduleHide();
-}
-
-function stopAutoHide() {
-  clearTimeout(hideTimer);
-  showBar();
-}
-
-document.addEventListener('mousemove', (e) => {
-  // Only auto-hide while a site is up; the launcher needs its controls.
-  if (el.search.hidden && e.clientY < 90) showBar(), scheduleHide();
+bridge.onChromeVisible((visible) => {
+  el.bar.classList.toggle('bar-hidden', !visible);
 });
 
-document.addEventListener('mouseleave', () => {
-  if (el.search.hidden) hideBar();
-});
-
-// Touching the bar should keep it up for a moment rather than vanishing.
-el.bar.addEventListener('mouseenter', () => {
-  clearTimeout(hideTimer);
-  bridge.chromeVisible(true);
-});
-el.bar.addEventListener('mouseleave', scheduleHide);
+// Pointer is on the bar itself, which is the launcher page's own strip.
+el.bar.addEventListener('mouseenter', () => bridge.chromeHover(true));
+el.bar.addEventListener('mouseleave', () => bridge.chromeHover(false));
 
 el.back.addEventListener('click', goBack);
 

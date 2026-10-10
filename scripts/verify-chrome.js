@@ -33,30 +33,71 @@ async function ensureSites() {
   if (hidden()) return fail('bar is hidden on the launcher');
   out.push('ok   bar visible on the launcher');
 
-  // --- open a site; the bar should hide on its own ---------------------------
+  // --- open a site ------------------------------------------------------------
   const tile = [...document.querySelectorAll('.tile')].find((t) =>
     t.dataset.url.includes('example.com'),
   );
   if (!tile) return fail('no example.com tile to open');
 
+  if (typeof bridge.debugMouseMove !== 'function') {
+    return fail('debug input hook missing — run with TVL_DEBUG_INPUT=1');
+  }
+
   tile.click();
-  await wait(1200);
+  await wait(600);
+
+  // Park the pointer away from the top, otherwise the physical cursor's real
+  // position decides whether the bar hides and the check is meaningless. This
+  // has to happen after the site opens: there is no site view to target before.
+  const parked = await bridge.debugMouseMove(400, 500);
+  if (!parked.ok) return fail('could not place the cursor away from the top');
+
   if (hidden()) return fail('bar hid immediately instead of staying reachable at first');
 
-  // Past the auto-hide delay it should be gone.
-  await wait(3000);
-  if (!hidden()) return fail('bar did not auto-hide over the site');
-  out.push('ok   bar auto-hides over a site');
+  // Past the auto-hide delay it should be gone. Poll rather than assume.
+  let hidBy = 0;
+  for (let i = 0; i < 40; i += 1) {
+    await wait(250);
+    if (hidden()) {
+      hidBy = 600 + (i + 1) * 250;
+      break;
+    }
+  }
+  if (!hidBy) {
+    const state = await bridge.debugChromeState().catch((e) => ({ err: e.message }));
+    return fail(`bar did not auto-hide over the site (state ${JSON.stringify(state)})`);
+  }
+  out.push(`ok   bar auto-hides over a site (after ${hidBy}ms)`);
 
   const view = await window.api.currentSite();
   if (!view) return fail('no site view open');
   out.push(`ok   site open at ${view.url}`);
 
   // --- moving the pointer near the top brings it back ------------------------
-  document.dispatchEvent(new MouseEvent('mousemove', { clientY: 10, clientX: 400 }));
-  await wait(500);
-  if (hidden()) return fail('pointer near the top did not restore the bar');
-  out.push('ok   bar returns on pointer movement');
+  const revealed = await bridge.debugMouseMove(400, 10);
+  if (!revealed.ok) return fail('could not place the cursor near the top');
+  await wait(700);
+  const afterMove = await bridge.debugChromeState().catch(() => null);
+  if (hidden()) {
+    return fail(`pointer near the top did not restore the bar (state ${JSON.stringify(afterMove)})`);
+  }
+  if (afterMove && afterMove.watching !== true) return fail('cursor watch is not running');
+  out.push('ok   bar returns when the pointer nears the top');
+
+  // And it must hide again once the pointer moves away from the top.
+  await bridge.debugMouseMove(400, 600);
+  await wait(600);
+  if (hidden()) return fail('bar vanished while the pointer was moving, before the delay');
+  let rehid = false;
+  for (let i = 0; i < 30; i += 1) {
+    await wait(250);
+    if (hidden()) {
+      rehid = true;
+      break;
+    }
+  }
+  if (!rehid) return fail('bar did not hide again after the pointer moved away');
+  out.push('ok   bar hides again when the pointer moves away');
 
   // --- an icon can be changed through the file input -------------------------
   let editorTile = document.querySelector('.tile');

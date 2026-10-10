@@ -17,7 +17,7 @@
 
 const path = require('node:path');
 const fs = require('node:fs');
-const { app, BrowserWindow, WebContentsView, ipcMain, protocol, net, shell } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, protocol, net, shell, screen } = require('electron');
 
 const store = require('./src/store');
 const icons = require('./src/icons');
@@ -43,10 +43,89 @@ let siteView = null;
 let blocker = null;
 /** The bar auto-hides over a site, and the site then gets the whole window. */
 let chromeVisible = true;
+let chromeTimer = null;
+/** How long the bar sits idle before hiding, and how near the top reveals it. */
+const AUTO_HIDE_MS = 2200;
+const REVEAL_ZONE_PX = 90;
 
 /** Space the site view must leave at the top for the shared bar. */
 function chromeInset() {
   return chromeVisible ? TOOLBAR_H : 0;
+}
+
+function showChrome({ schedule = true } = {}) {
+  chromeVisible = true;
+  sendToLauncher('chrome:visible', true);
+  trackViewBounds();
+  cancelHideChrome();
+  if (schedule) scheduleHideChrome();
+}
+
+function hideChrome() {
+  if (!siteView) return;
+  chromeVisible = false;
+  sendToLauncher('chrome:visible', false);
+  trackViewBounds();
+}
+
+/**
+ * The cursor poller runs several times a second, so this must not restart an
+ * already-pending hide — resetting the timer every tick means it never elapses
+ * and the bar never goes away.
+ */
+function scheduleHideChrome() {
+  if (chromeTimer) return;
+  chromeTimer = setTimeout(() => {
+    chromeTimer = null;
+    hideChrome();
+  }, AUTO_HIDE_MS);
+}
+
+function cancelHideChrome() {
+  clearTimeout(chromeTimer);
+  chromeTimer = null;
+}
+
+/*
+ * Pointer tracking for reveal-on-hover.
+ *
+ * The site view covers the whole window while the bar is hidden, so the
+ * launcher page receives no pointer events and cannot reveal itself. Polling
+ * the cursor in the main process is the reliable way to see it: Chromium's
+ * before-input-event does not deliver pointer moves at all (verified — it
+ * records nothing for an injected move), so an event-based approach silently
+ * never fires.
+ */
+let cursorTimer = null;
+/** Test-only override of the cursor position, in content coordinates. */
+let debugCursor = null;
+
+function cursorLocalToWindow() {
+  if (debugCursor) return debugCursor;
+  if (!mainWindow || mainWindow.isDestroyed()) return null;
+  const point = screen.getCursorScreenPoint();
+  const content = mainWindow.getContentBounds();
+  return { x: point.x - content.x, y: point.y - content.y, w: content.width, h: content.height };
+}
+
+function startCursorWatch() {
+  stopCursorWatch();
+  cursorTimer = setInterval(() => {
+    if (!siteView || !mainWindow || mainWindow.isDestroyed()) return;
+    const local = cursorLocalToWindow();
+    if (!local) return;
+
+    const nearTop =
+      local.y >= 0 && local.y < REVEAL_ZONE_PX && local.x >= 0 && local.x < (local.w ?? Infinity);
+
+    if (nearTop) showChrome();
+    else if (chromeVisible) scheduleHideChrome();
+  }, 150);
+}
+
+function stopCursorWatch() {
+  clearInterval(cursorTimer);
+  cursorTimer = null;
 }
 
 function createWindow() {
@@ -115,6 +194,8 @@ function openSite(url) {
 
   mainWindow.contentView.addChildView(view);
   siteView = view;
+  startCursorWatch();
+  showChrome();
   view.webContents.loadURL(url).catch((err) => log(`load failed: ${err.message}`));
 
   mainWindow.on('resize', trackViewBounds);
@@ -130,14 +211,24 @@ function openSite(url) {
 
 function destroySiteView() {
   if (!siteView) return;
-  // Drop the resize listeners too, or they accumulate on every open and keep
-  // pointing at a destroyed view.
-  mainWindow.removeListener('resize', trackViewBounds);
-  mainWindow.removeListener('maximize', trackViewBounds);
-  mainWindow.removeListener('unmaximize', trackViewBounds);
-  mainWindow.contentView.removeChildView(siteView);
-  siteView.webContents.close();
+  clearTimeout(chromeTimer);
+  chromeTimer = null;
+  stopCursorWatch();
+
+  // The window's 'closed' event nulls mainWindow before 'window-all-closed'
+  // fires, so this can run with no window at all. Guard every use of it.
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    // Drop the resize listeners too, or they accumulate on every open and keep
+    // pointing at a destroyed view.
+    mainWindow.removeListener('resize', trackViewBounds);
+    mainWindow.removeListener('maximize', trackViewBounds);
+    mainWindow.removeListener('unmaximize', trackViewBounds);
+    mainWindow.contentView.removeChildView(siteView);
+  }
+
+  if (!siteView.webContents.isDestroyed()) siteView.webContents.close();
   siteView = null;
+  chromeVisible = true;
 }
 
 /** Keep the site surface filling the area below the toolbar as the window changes. */
@@ -213,11 +304,23 @@ ipcMain.handle('site:current', () => {
   };
 });
 
-// The launcher reports whether the shared bar is showing; the site view grows
-// into the space it vacates so a page really does fill the window.
+// The launcher reports pointer state on the bar itself, and whether the bar is
+// showing. The site view grows into the space the bar vacates so a page really
+// does fill the window.
 ipcMain.handle('chrome:visible', (_e, visible) => {
-  chromeVisible = visible !== false;
-  trackViewBounds();
+  if (visible === false) hideChrome();
+  return { ok: true, inset: chromeInset() };
+});
+
+ipcMain.handle('chrome:hover', (_e, hovering) => {
+  if (!siteView) return { ok: true };
+  if (hovering) {
+    // Pointer is on the bar: keep it up until it leaves.
+    cancelHideChrome();
+    showChrome({ schedule: false });
+  } else {
+    scheduleHideChrome();
+  }
   return { ok: true, inset: chromeInset() };
 });
 
@@ -228,6 +331,29 @@ ipcMain.handle('brave:open', (_e, { url }) =>
 );
 
 /* ------------------------------ startup -------------------------------- */
+
+/*
+ * Debug-only: lets a verification script inject a real pointer event into the
+ * site view, because reveal-on-hover is handled in this process and cannot be
+ * exercised by dispatching a DOM event in the launcher page.
+ */
+if (process.env.TVL_DEBUG_INPUT === '1') {
+  // Position the cursor logically so the reveal logic can be exercised without
+  // a physical pointer. Chromium delivers no pointer events to
+  // before-input-event, so the poller is the only thing that can be driven.
+  ipcMain.handle('debug:mouse-move', (_e, { x = 10, y = 10 } = {}) => {
+    if (!siteView || siteView.webContents.isDestroyed()) return { ok: false };
+    const content = mainWindow.getContentBounds();
+    debugCursor = { x, y, w: content.width, h: content.height };
+    return { ok: true };
+  });
+  ipcMain.handle('debug:chrome-state', () => ({
+    visible: chromeVisible,
+    hasSite: Boolean(siteView),
+    watching: Boolean(cursorTimer),
+    cursor: debugCursor,
+  }));
+}
 
 /**
  * Debug hook: TVL_CAPTURE=<path> writes a PNG of the launcher once it has

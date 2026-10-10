@@ -29,4 +29,5 @@ JSON
 
 XDG_DATA_HOME="${SCRATCH}" \
 TVL_VERIFY="${ROOT}/${SCRIPT}" \
+TVL_DEBUG_INPUT=1 \
   "${ROOT}/scripts/run.sh"

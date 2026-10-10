@@ -40,6 +40,13 @@ contextBridge.exposeInMainWorld('api', {
   braveAvailable: () => ipcRenderer.invoke('brave:available'),
   openInBrave: (url) => ipcRenderer.invoke('brave:open', { url }),
   chromeVisible: (visible) => ipcRenderer.invoke('chrome:visible', visible),
+  chromeHover: (hovering) => ipcRenderer.invoke('chrome:hover', hovering),
+  onChromeVisible: (fn) => {
+    ipcRenderer.on('chrome:visible', (_e, visible) => fn(visible));
+  },
+  // Present only when the app is started with TVL_DEBUG_INPUT=1.
+  debugMouseMove: (x, y) => ipcRenderer.invoke('debug:mouse-move', { x, y }),
+  debugChromeState: () => ipcRenderer.invoke('debug:chrome-state'),
 
   // The site surface covers the launcher, so the main process reports when a
   // site is open or closed and the toolbar swaps accordingly.
