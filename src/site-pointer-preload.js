@@ -16,7 +16,7 @@
 const { ipcRenderer } = require('electron');
 
 /** Coarse reporting is plenty; sending every move is pure overhead. */
-const THRESHOLD_PX = 6;
+const THRESHOLD_PX = 2;
 
 let lastSent = -999;
 

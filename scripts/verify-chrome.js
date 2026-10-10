@@ -49,17 +49,17 @@ async function ensureSites() {
   // Park the pointer away from the top, otherwise the physical cursor's real
   // position decides whether the bar hides and the check is meaningless. This
   // has to happen after the site opens: there is no site view to target before.
-  const parked = await bridge.debugMouseMove(500);
+  const parked = await bridge.debugMouseMove(400);
   if (!parked.ok) return fail('could not place the cursor away from the top');
 
   if (hidden()) return fail('bar hid immediately instead of staying reachable at first');
 
-  // Past the auto-hide delay it should be gone. Poll rather than assume.
+  // Past the auto-hide delay it should be gone. Bounded, not a fixed sleep.
   let hidBy = 0;
   for (let i = 0; i < 40; i += 1) {
-    await wait(250);
+    await wait(150);
     if (hidden()) {
-      hidBy = 600 + (i + 1) * 250;
+      hidBy = 600 + (i + 1) * 150;
       break;
     }
   }
@@ -83,13 +83,14 @@ async function ensureSites() {
   }
   out.push('ok   bar returns when the pointer nears the top');
 
-  // And it must hide again once the pointer moves away from the top.
-  await bridge.debugMouseMove(600);
-  await wait(600);
-  if (hidden()) return fail('bar vanished while the pointer was moving, before the delay');
+  // And it must hide again once the pointer moves away from the top. Bounded
+  // rather than tied to the idle constant, since the countdown starts when the
+  // bar was revealed, not when the pointer left.
+  await bridge.debugMouseMove(400);
+  if (hidden()) return fail('bar vanished the instant the pointer left the top');
   let rehid = false;
-  for (let i = 0; i < 30; i += 1) {
-    await wait(250);
+  for (let i = 0; i < 40; i += 1) {
+    await wait(150);
     if (hidden()) {
       rehid = true;
       break;

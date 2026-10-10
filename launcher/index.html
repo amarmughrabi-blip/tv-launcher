@@ -10,11 +10,10 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <!-- One bar, two states: launcher controls, or controls for the open site.
-         It stays visible because the site view is inset below it. -->
+    <!-- One bar, two states. It stays visible because the site view is inset
+         below it, and slides away over a site so the page fills the window. -->
     <header class="bar" id="bar">
-      <button id="back" class="btn btn-ghost" hidden>← Back</button>
-
+      <button id="back" class="btn btn-ghost" hidden>&larr; Back</button>
       <input
         id="search"
         class="search"
@@ -24,25 +23,64 @@
         spellcheck="false"
       />
       <span id="site-title" class="site-title" hidden></span>
-
       <div class="bar-actions">
         <button id="add" class="btn">Add app</button>
         <button id="open-brave" class="btn btn-ghost" hidden>Open in Brave</button>
       </div>
     </header>
 
-    <!-- Shows whatever is selected: the focal point, the way a TV home screen
-         presents the thing you are about to open. -->
-    <div id="hero" class="hero" hidden>
-      <img id="hero-icon" class="hero-icon" alt="" />
-      <div class="hero-text">
-        <h1 id="hero-label" class="hero-label"></h1>
-        <p id="hero-host" class="hero-host"></p>
-      </div>
-      <span class="hero-hint">Open in browser &middot; Back returns</span>
-    </div>
+    <div class="shell">
+      <nav class="rail" aria-label="Sections">
+        <button class="rail-btn is-active" data-tab="home" title="Home">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 10.5 12 3l9 7.5" />
+            <path d="M5.5 9.5V20h13V9.5" />
+            <path d="M9.5 20v-6h5v6" />
+          </svg>
+        </button>
+        <button class="rail-btn" data-tab="apps" title="Apps">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3.5" y="3.5" width="7" height="7" rx="1.6" />
+            <rect x="13.5" y="3.5" width="7" height="7" rx="1.6" />
+            <rect x="3.5" y="13.5" width="7" height="7" rx="1.6" />
+            <rect x="13.5" y="13.5" width="7" height="7" rx="1.6" />
+          </svg>
+        </button>
+        <button class="rail-btn" data-tab="search" title="Search">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="11" cy="11" r="6.5" />
+            <path d="m16 16 4.5 4.5" />
+          </svg>
+        </button>
+        <span class="rail-gap"></span>
+        <button class="rail-btn" id="rail-add" title="Add app">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+        </button>
+      </nav>
 
-    <main id="grid" class="grid"></main>
+      <div class="stage">
+        <!-- Banner presenting the selection, in the style of a TV home screen. -->
+        <section id="hero" class="hero" hidden>
+          <div class="hero-art" id="hero-art">
+            <img id="hero-icon" class="hero-icon" alt="" />
+          </div>
+          <div class="hero-text">
+            <h1 id="hero-label" class="hero-label"></h1>
+            <p id="hero-host" class="hero-host"></p>
+            <p class="hero-hint">Enter opens &middot; Escape returns to the launcher</p>
+          </div>
+        </section>
+
+        <div class="tabs" id="tabs">
+          <button class="tab is-active" data-tab="home">For You</button>
+          <button class="tab" data-tab="apps">Apps</button>
+        </div>
+
+        <main id="grid" class="grid"></main>
+      </div>
+    </div>
 
     <p id="empty" class="empty" hidden>
       No apps yet. Use <strong>Add app</strong> to put your first one on the grid.
@@ -69,7 +107,7 @@
           <div class="icon-row">
             <img id="edit-icon-preview" class="icon-preview" alt="" />
             <div class="icon-actions">
-              <label class="btn btn-small file-label" for="edit-icon-input">Change…</label>
+              <label class="btn btn-small file-label" for="edit-icon-input">Change&hellip;</label>
               <input id="edit-icon-input" type="file" accept="image/*" hidden />
               <button type="button" id="edit-icon-clear" class="btn btn-small btn-ghost">
                 Reset

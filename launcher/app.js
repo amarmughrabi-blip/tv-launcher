@@ -12,6 +12,7 @@ const bridge = window.api;
 
 const el = {
   bar: document.getElementById('bar'),
+  railAdd: document.getElementById('rail-add'),
   hero: document.getElementById('hero'),
   heroIcon: document.getElementById('hero-icon'),
   heroLabel: document.getElementById('hero-label'),
@@ -49,6 +50,7 @@ let filter = '';
 let editing = null; // the record being edited
 let editingIcon = null; // pending custom icon name
 let activeUrl = null; // site currently loaded in-window
+let tab = 'home';
 
 /* ------------------------------ helpers ------------------------------- */
 
@@ -183,14 +185,17 @@ function showHero(tile) {
   el.heroLabel.textContent = record.label;
   el.heroHost.textContent = hostOf(record.url);
 
-  // Reuse whatever the tile is already showing, so the hero never flashes empty.
+  // Reuse whatever the tile is already showing, so the banner never flashes
+  // empty or contradicts the tile beside it.
   const tileIcon = tile.querySelector('.tile-icon, .badge');
-  el.heroIcon.className = tileIcon && tileIcon.classList.contains('badge')
-    ? 'hero-icon hero-badge'
-    : 'hero-icon';
-  if (tileIcon && tileIcon.tagName === 'IMG') {
-    el.heroIcon.src = tileIcon.src;
+  const isImage = tileIcon && tileIcon.tagName === 'IMG';
+  el.heroIcon.className = isImage ? 'hero-icon' : 'hero-icon hero-badge';
+
+  if (isImage) {
+    el.heroIcon.removeAttribute('src');
+    el.heroIcon.textContent = '';
     el.heroIcon.style.background = '';
+    el.heroIcon.src = tileIcon.src;
   } else {
     el.heroIcon.removeAttribute('src');
     el.heroIcon.style.background = tileIcon ? tileIcon.style.background : '';
@@ -205,6 +210,7 @@ async function render() {
     : sites;
 
   el.grid.replaceChildren();
+  el.grid.classList.toggle('is-grid', tab === 'apps');
   el.empty.hidden = visible.length > 0 || sites.length > 0;
 
   if (visible.length) {
@@ -215,7 +221,9 @@ async function render() {
     heading.className = 'row-label';
     heading.textContent = term
       ? `${visible.length} result${visible.length === 1 ? '' : 's'}`
-      : 'Your apps';
+      : tab === 'apps'
+        ? 'All apps'
+        : 'Your apps';
     row.append(heading);
 
     const track = document.createElement('div');
@@ -261,6 +269,11 @@ async function paintIcon(placeholder, record) {
   img.alt = '';
   img.addEventListener('error', () => placeholder.replaceWith(img), { once: true });
   placeholder.replaceWith(img);
+
+  // The banner mirrors the selected tile, so it has to pick the real icon up
+  // once it arrives rather than staying on the letter badge.
+  const tile = placeholder.closest('.tile');
+  if (tile && tile.classList.contains('is-selected')) showHero(tile);
 }
 
 function makeBadge(record) {
@@ -381,12 +394,7 @@ el.editRemove.addEventListener('click', async () => {
   toast('Removed');
 });
 
-el.add.addEventListener('click', () => {
-  el.addUrl.value = '';
-  el.addName.value = '';
-  el.adder.showModal();
-  el.addUrl.focus();
-});
+el.add.addEventListener('click', () => el.railAdd.click());
 
 el.addCancel.addEventListener('click', () => el.adder.close());
 
@@ -409,6 +417,34 @@ el.brave.addEventListener('click', async () => {
 el.search.addEventListener('input', () => {
   filter = el.search.value;
   render();
+});
+
+/* ------------------------------ tabs --------------------------------- */
+
+function setTab(next) {
+  tab = next;
+  for (const button of document.querySelectorAll('.tab, .rail-btn[data-tab]')) {
+    button.classList.toggle('is-active', button.dataset.tab === tab);
+  }
+  // Opening Search focuses the field so typing works straight away.
+  if (tab === 'search') {
+    el.search.focus();
+    el.search.select();
+  } else {
+    el.search.blur();
+  }
+  render();
+}
+
+for (const button of document.querySelectorAll('.tab, .rail-btn[data-tab]')) {
+  button.addEventListener('click', () => setTab(button.dataset.tab));
+}
+
+el.railAdd.addEventListener('click', () => {
+  el.addUrl.value = '';
+  el.addName.value = '';
+  el.adder.showModal();
+  el.addUrl.focus();
 });
 
 /* --------------------------- keyboard nav ----------------------------- */

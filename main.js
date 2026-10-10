@@ -47,14 +47,18 @@ let chromeTimer = null;
 /** Last pointer height reported by the site preload; used by the debug hook. */
 let lastPointerY = -1;
 /** How long the bar sits idle before hiding, and how near the top reveals it. */
-const AUTO_HIDE_MS = 2200;
-const REVEAL_ZONE_PX = 90;
+const AUTO_HIDE_MS = 1200;
+/**
+ * Generous reveal band. A tight one feels unresponsive because the bar is already
+ * gone by the time the pointer reaches the very top of the screen.
+ */
+const REVEAL_ZONE_PX = 130;
 /**
  * Hiding needs a wider band than revealing. Without the gap the bar flickers
  * when the pointer sits right on the boundary, because every mouse move toggles
  * it.
  */
-const HIDE_ZONE_PX = 160;
+const HIDE_ZONE_PX = 230;
 const BOUNDS_ANIM_MS = 280;
 
 /** Space the site view must leave at the top for the shared bar. */
