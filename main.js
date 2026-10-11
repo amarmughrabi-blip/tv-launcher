@@ -1034,49 +1034,6 @@ if (process.env.TVL_DEBUG_INPUT === '1') {
 
   ipcMain.handle('debug:player-internals', async () => player.internals());
 
-  ipcMain.on('settings:theme', (event) => {
-    event.returnValue = settingsCache.theme;
-  });
-
-  ipcMain.handle('settings:get', () => ({
-    settings: settings.all(),
-    defaults: settings.DEFAULTS,
-    genres: channelGenresWithCounts(),
-  }));
-
-  ipcMain.handle('settings:set', (_e, changes = {}) => {
-    settingsCache = settings.set(changes);
-    // Anything already open has to be brought in line with the new settings
-    // rather than waiting for a restart: the page behind the ads and the video
-    // already playing are both mid-session.
-    applySettingsToOpenSite();
-    if (player.isOpen()) player.sendSettings();
-    return { ok: true, settings: settingsCache };
-  });
-
-  ipcMain.handle('settings:reset', () => {
-    settingsCache = settings.reset();
-    applySettingsToOpenSite();
-    return { ok: true, settings: settingsCache };
-  });
-
-  /**
-   * Add or remove a site from the exception list.
-   *
-   * `toggle` rather than add/remove, because that is how the button works and
-   * having the renderer work out which of the two to call would put the list
-   * logic in two places.
-   */
-  ipcMain.handle('settings:toggle-exception', (_e, { host } = {}) => {
-    const name = String(host || '').trim().toLowerCase().replace(/^www\./, '');
-    if (!name) return { ok: false, error: 'no site given' };
-    const current = settings.all().blockingExceptions;
-    const next = current.includes(name)
-      ? current.filter((entry) => entry !== name)
-      : [...current, name];
-    settingsCache = settings.set({ blockingExceptions: next });
-    return { ok: true, settings: settingsCache, exempt: next.includes(name) };
-  });
 
   ipcMain.handle('debug:resize', async (_e, { width, height } = {}) => {
     // A real window resize, not a style override on the stage: faking the width
@@ -1377,6 +1334,59 @@ app.on('second-instance', () => {
     setInterval(run, every).unref?.();
   }
 
+
+/*
+ * Settings.
+ *
+ * At top level on purpose. These were briefly registered inside the
+ * TVL_DEBUG_INPUT block below, which meant a normal launch never had them:
+ * theme.js asks for the theme synchronously during page parse, and an
+ * unanswered sendSync blocks the renderer before app.js has even run -- so
+ * the loading screen cleared for nobody and the app looked hung.
+ */
+  ipcMain.on('settings:theme', (event) => {
+    event.returnValue = settingsCache.theme;
+  });
+
+  ipcMain.handle('settings:get', () => ({
+    settings: settings.all(),
+    defaults: settings.DEFAULTS,
+    genres: channelGenresWithCounts(),
+  }));
+
+  ipcMain.handle('settings:set', (_e, changes = {}) => {
+    settingsCache = settings.set(changes);
+    // Anything already open has to be brought in line with the new settings
+    // rather than waiting for a restart: the page behind the ads and the video
+    // already playing are both mid-session.
+    applySettingsToOpenSite();
+    if (player.isOpen()) player.sendSettings();
+    return { ok: true, settings: settingsCache };
+  });
+
+  ipcMain.handle('settings:reset', () => {
+    settingsCache = settings.reset();
+    applySettingsToOpenSite();
+    return { ok: true, settings: settingsCache };
+  });
+
+  /**
+   * Add or remove a site from the exception list.
+   *
+   * `toggle` rather than add/remove, because that is how the button works and
+   * having the renderer work out which of the two to call would put the list
+   * logic in two places.
+   */
+  ipcMain.handle('settings:toggle-exception', (_e, { host } = {}) => {
+    const name = String(host || '').trim().toLowerCase().replace(/^www\./, '');
+    if (!name) return { ok: false, error: 'no site given' };
+    const current = settings.all().blockingExceptions;
+    const next = current.includes(name)
+      ? current.filter((entry) => entry !== name)
+      : [...current, name];
+    settingsCache = settings.set({ blockingExceptions: next });
+    return { ok: true, settings: settingsCache, exempt: next.includes(name) };
+  });
 
 if (isPrimary) app.whenReady().then(async () => {
   paths.ensure();
