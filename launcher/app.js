@@ -529,15 +529,33 @@ const tv = window.mountTv({
 
 /* ---------------------------- settings -------------------------------- */
 
-const settingsScreen = window.mountSettings({
-  api: bridge,
-  toast,
-  // Genres and region both change what the TV page shows, so it has to redraw
-  // rather than keep a grid the settings no longer describe.
-  onChannelChange: () => tv.loadData(),
-});
+// Guarded, because settings.js is a separate script and a failure in it would
+// otherwise throw here and take the tab wiring below it down as well -- one
+// broken screen should not cost you the rest of the launcher, least of all the
+// button you pressed to find out what went wrong.
+const settingsScreen = typeof window.mountSettings === 'function'
+  ? window.mountSettings({
+    api: bridge,
+    toast,
+    // Genres and region both change what the TV page shows, so it has to redraw
+    // rather than keep a grid the settings no longer describe.
+    onChannelChange: () => tv.loadData(),
+  })
+  : {
+    open: () => toast('Settings could not load. Restart the launcher.'),
+  };
 
-el.railSettings.addEventListener('click', () => settingsScreen.open());
+el.railSettings.addEventListener('click', () => {
+  // Wrapped because a throw inside open() would leave the viewer clicking a
+  // button that silently does nothing -- which is the worst thing a settings
+  // button can do, and looks exactly like a broken app rather than a bug.
+  try {
+    settingsScreen.open();
+  } catch (err) {
+    toast(`Settings could not open: ${err && err.message ? err.message : err}`);
+    console.error('settings failed to open', err);
+  }
+});
 
 // Channel management belongs in settings as well as on the TV page: the gear is
 // where somebody looks for "how do I get rid of this", and the TV page is where

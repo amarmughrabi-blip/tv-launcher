@@ -48,10 +48,20 @@ const changed = async (id, value, kind = 'value') => {
   }
   out.push('ok   the gear sits at the bottom of the rail');
 
+  // The dialog has to be on screen the instant the button is pressed, not after
+  // the settings have been read. It used to load first and show second, so a slow
+  // or failing request left the viewer pressing a button that did nothing at all
+  // -- which reads as a broken app, and is indistinguishable from one.
   gear.click();
+  await wait(60);
+  if (!field('settings-dialog').open) {
+    return fail('the settings screen is not on screen immediately after the click');
+  }
+
   await wait(900);
   const dialog = field('settings-dialog');
-  if (!dialog.open) return fail('the settings screen did not open');
+  if (!dialog.open) return fail('the settings screen closed on its own');
+  out.push('ok   the menu is up straight away, not after a round trip');
 
   // Every section has to be reachable, and the one that opens has to be visible
   // rather than merely present -- an element with height 0 is not on screen.

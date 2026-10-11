@@ -191,12 +191,32 @@ function mountSettings({ api, toast, onChannelChange }) {
     paintExceptions();
   }
 
+  /**
+   * Load the settings and draw them.
+   *
+   * Never throws. This runs after the dialog is already on screen, so a failure
+   * here leaves the viewer looking at a menu -- and the right thing to do with
+   * that is say what went wrong, not disappear silently back to the launcher,
+   * which is indistinguishable from the button not working.
+   */
   async function refresh() {
-    const data = await api.settings();
-    state.values = data.settings;
-    state.defaults = data.defaults;
-    state.genres = data.genres || [];
-    paint();
+    try {
+      const data = await api.settings();
+      state.values = data.settings || {};
+      state.defaults = data.defaults || {};
+      state.genres = data.genres || [];
+      paint();
+      setProblem('');
+    } catch (err) {
+      setProblem(`Settings could not be read: ${err && err.message ? err.message : err}`);
+    }
+  }
+
+  function setProblem(text) {
+    const box = el('settings-problem');
+    if (!box) return;
+    box.textContent = text || '';
+    box.hidden = !text;
   }
 
   /* ------------------------------ wiring ----------------------------- */
@@ -256,13 +276,25 @@ function mountSettings({ api, toast, onChannelChange }) {
   wire();
 
   return {
-    open: async (section) => {
-      await refresh();
+    /**
+     * Open the screen.
+     *
+     * The dialog goes up first and the contents follow. It used to load the
+     * settings and only then show, which meant a slow or failing round-trip to
+     * main left the button doing nothing at all -- the viewer clicked Settings
+     * and got no menu and no explanation, which reads as a broken app rather than
+     * a failed request.
+     */
+    open: (section) => {
+      if (!dialog.open) {
+        setProblem('');
+        dialog.showModal();
+      }
       if (section) {
         const tab = dialog.querySelector(`.settings-tab[data-section="${section}"]`);
         if (tab) tab.click();
       }
-      if (!dialog.open) dialog.showModal();
+      refresh();
     },
   };
 }

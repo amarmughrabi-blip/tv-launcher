@@ -354,6 +354,9 @@
         </nav>
 
         <div class="settings-body">
+          <!-- Shown when the settings could not be read. Without it a failed
+               request looks exactly like a button that does not work. -->
+          <p class="settings-problem" id="settings-problem" hidden></p>
           <!-- ----------------------------- channels ----------------------------- -->
           <section class="settings-section is-active" data-section="channels">
             <div class="field">

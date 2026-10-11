@@ -1423,3 +1423,22 @@ output {
   color: var(--muted);
   min-width: 42px;
 }
+
+/*
+ * A settings screen that could not load has to say so. Falling back to silence
+ * makes a failed request indistinguishable from a button that does not work,
+ * which is the one thing a person pressing Settings is not going to believe.
+ */
+.settings-problem {
+  margin: 0 0 12px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  background: hsl(356 62% 46% / 0.16);
+  border: 1px solid hsl(356 62% 60% / 0.4);
+  color: #ffd7dc;
+  font-size: 12.5px;
+}
+
+.settings-problem[hidden] {
+  display: none;
+}
