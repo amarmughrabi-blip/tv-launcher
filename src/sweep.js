@@ -34,11 +34,16 @@ function select(list, which) {
  * Check a batch and return what would change, writing nothing.
  *
  * @param {Array}  list       channels to consider
- * @param {object} options    { which, deep, concurrency }
+ * @param {object} options    { which, deep, concurrency, health }
  * @param {function} [onProgress] called with { done, total, name }
  */
 async function sweep(list, options = {}, onProgress) {
   const { which = 'unchecked', deep = false, concurrency = DEFAULT_CONCURRENCY } = options;
+  // The day list has to come from here rather than from the channel records.
+  // `channels.all()` exposes the streak for the UI but deliberately not the last
+  // sixty days behind it -- sixty strings for each of 453 channels, thrown
+  // across IPC on every tab switch, for something only this function needs.
+  const health = options.health || {};
   const targets = select(list, which);
 
   const results = new Map();
@@ -64,7 +69,8 @@ async function sweep(list, options = {}, onProgress) {
 
       // The same day rule the single-play path uses, so a check and a watch
       // cannot disagree about whether a channel has earned its place off the grid.
-      const days = counted ? noteFailure({ days: channel.days }) : [];
+      const known = (health[channel.url] && health[channel.url].days) || [];
+      const days = counted ? noteFailure({ days: known }) : [];
       const streak = streakDays(days);
 
       results.set(channel.url, {
@@ -79,7 +85,7 @@ async function sweep(list, options = {}, onProgress) {
         streak,
         threshold: deadDays(),
         wouldHide: counted && streak >= deadDays(),
-        recovered: ok && streakDays(channel.days) > 0,
+        recovered: ok && streakDays(known) > 0,
       });
 
       done += 1;

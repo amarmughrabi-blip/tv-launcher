@@ -38,7 +38,6 @@ const el = {
   settingsDialog: document.getElementById('settings-dialog'),
   settingsCheckNow: document.getElementById('settings-check-now'),
   settingsHidden: document.getElementById('settings-hidden'),
-  tvSweepOpen: document.getElementById('tv-sweep'),
   tvHiddenToggle: document.getElementById('tv-hidden-toggle'),
   profileMeta: document.getElementById('profile-meta'),
   profileDelete: document.getElementById('profile-delete'),
@@ -486,7 +485,13 @@ el.editRemove.addEventListener('click', async () => {
   toast('Removed');
 });
 
-el.add.addEventListener('click', () => el.railAdd.click());
+el.add.addEventListener('click', () => {
+  if (tab === 'tv') {
+    tv.openAdd();
+    return;
+  }
+  el.railAdd.click();
+});
 
 el.addCancel.addEventListener('click', () => el.adder.close());
 
@@ -563,7 +568,7 @@ el.railSettings.addEventListener('click', () => {
 el.settingsCheckNow.addEventListener('click', () => {
   el.settingsDialog.close();
   document.querySelector('.rail-btn[data-tab="tv"]').click();
-  setTimeout(() => el.tvSweepOpen.click(), 900);
+  setTimeout(() => tv.openSweep(), 900);
 });
 
 el.settingsHidden.addEventListener('click', () => {
@@ -586,6 +591,12 @@ function setTab(next) {
   // The banner belongs to the For You view. Leaving it up over the grid made
   // that tab feel like a detail page rather than a list.
   el.stage.classList.toggle('no-banner', tab !== 'home');
+
+  // The header button belongs to the page you are on.
+  el.add.textContent = tab === 'tv' ? 'Add channel' : 'Add app';
+  el.add.title = tab === 'tv'
+    ? 'Add a channel by its stream link'
+    : 'Add a website';
 
   // TV replaces the apps grid entirely rather than sitting under it.
   const onTv = tab === 'tv';

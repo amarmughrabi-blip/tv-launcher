@@ -127,11 +127,19 @@ body::before {
   inset: 0;
   pointer-events: none;
   z-index: 0;
+  /*
+   * Deliberately faint.
+   *
+   * At 20% this read as a lit band rather than ambience. The top bar fades to
+   * transparent along its bottom edge, and the genre strip is the only full-width
+   * row with nothing painted behind it -- so the wash showed through exactly
+   * there and nowhere else, and looked like a stripe lying across the channels.
+   * Halved twice: it is a room's light, not a thing to be seen.
+   */
   background:
-    radial-gradient(900px 520px at 26% -6%, hsl(var(--glow-hue) 72% 46% / 0.2), transparent 66%),
-    radial-gradient(800px 480px at 88% 112%, hsl(calc(var(--glow-hue) + 40) 66% 42% / 0.16), transparent 64%),
-    radial-gradient(1200px 720px at 52% 40%, var(--ambient) 0%, var(--bg) 72%);
-  transition: background 0.75s var(--ease);
+    radial-gradient(1100px 640px at 24% -10%, hsl(var(--glow-hue) 72% 46% / 0.09), transparent 62%),
+    radial-gradient(1000px 560px at 86% 108%, hsl(calc(var(--glow-hue) + 40) 66% 42% / 0.07), transparent 60%),
+    radial-gradient(1400px 840px at 52% 42%, var(--ambient) 0%, var(--bg) 78%);
 }
 
 /* ---------------- top bar ---------------- */

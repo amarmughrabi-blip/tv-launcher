@@ -185,8 +185,6 @@ function mountTv({ root, grid, genresBar, summaryEl, emptyEl, load, play, api, t
     hiddenToggle: document.getElementById('tv-hidden-toggle'),
     hiddenPanel: document.getElementById('tv-hidden'),
     hiddenRow: document.getElementById('tv-hidden-row'),
-    sweepOpen: document.getElementById('tv-sweep'),
-    addOpen: document.getElementById('tv-add'),
   };
 
   let data = null;
@@ -382,8 +380,6 @@ function mountTv({ root, grid, genresBar, summaryEl, emptyEl, load, play, api, t
     fName.focus();
   }
 
-  els.addOpen.addEventListener('click', () => openEditor(null));
-
   document.getElementById('channel-cancel').addEventListener('click', () => dialog.close());
 
   fRemove.addEventListener('click', async () => {
@@ -548,7 +544,7 @@ function mountTv({ root, grid, genresBar, summaryEl, emptyEl, load, play, api, t
     sweepStart.textContent = 'Check again';
   }
 
-  els.sweepOpen.addEventListener('click', () => {
+  function openSweep() {
     sweepResult.hidden = true;
     sweepProgress.hidden = true;
     sweepApply.hidden = true;
@@ -556,7 +552,7 @@ function mountTv({ root, grid, genresBar, summaryEl, emptyEl, load, play, api, t
     sweepStart.textContent = 'Check';
     sweepToken = null;
     sweepDialog.showModal();
-  });
+  }
 
   wireChoices();
 
@@ -631,6 +627,9 @@ function mountTv({ root, grid, genresBar, summaryEl, emptyEl, load, play, api, t
       root.hidden = true;
     },
     loadData,
+    // Reachable from Settings, which is where the check lives now.
+    openSweep,
+    openAdd: () => openEditor(null),
   };
 }
 

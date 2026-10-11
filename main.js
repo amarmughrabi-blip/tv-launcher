@@ -767,7 +767,7 @@ ipcMain.handle('sweep:start', async (_e, options = {}) => {
 
   const report = await sweepEngine.sweep(
     list,
-    { which, deep },
+    { which, deep, health: readChannelHealth() },
     ({ done, total, name }) => {
       if (mine !== sweepToken) return;
       sendToLauncher('sweep:progress', { done, total, name });
@@ -1319,7 +1319,11 @@ app.on('second-instance', () => {
 
     const run = async () => {
       log('automatic channel check starting');
-      const report = await sweepEngine.sweep(channels.all(), { which: 'unchecked', deep: false });
+      const report = await sweepEngine.sweep(channels.all(), {
+        which: 'unchecked',
+        deep: false,
+        health: readChannelHealth(),
+      });
       const { state, hidden } = sweepEngine.apply(report, readChannelHealth());
       writeChannelHealth(state);
       log(`automatic check: ${report.checked} checked, ${report.uncertain} could not be judged, ${hidden.length} hidden`);

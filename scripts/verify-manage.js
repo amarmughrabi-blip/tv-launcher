@@ -32,10 +32,17 @@ function fill(id, value) {
 
   /* ------------------------------ the toolbar ----------------------------- */
 
-  const addBtn = document.getElementById('tv-add');
-  const sweepBtn = document.getElementById('tv-sweep');
-  if (!addBtn || !sweepBtn) return fail('the channel tools are missing from the TV page');
-  out.push('ok   Add channel and Check channels are on the TV page');
+  // Adding a channel is the header button on the TV page; checking them is a
+  // settings job now, so the TV page should not be offering either of its own.
+  const addBtn = document.getElementById('add');
+  if (!addBtn) return fail('no header button on the TV page');
+  if (addBtn.textContent.trim() !== 'Add channel') {
+    return fail(`the header button says "${addBtn.textContent.trim()}" over a grid of channels`);
+  }
+  if (document.getElementById('tv-sweep') || document.getElementById('tv-add')) {
+    return fail('the TV page still carries its own channel buttons');
+  }
+  out.push('ok   Add channel replaces Add app on the TV page, and Check lives in Settings');
 
   /* ------------------------------- adding --------------------------------- */
 
@@ -108,10 +115,14 @@ function fill(id, value) {
 
   /* ------------------------------- checking ------------------------------- */
 
-  sweepBtn.click();
-  await wait(400);
+  // Reached the way a person reaches it now: from Settings.
+  document.getElementById('rail-settings').click();
+  await wait(800);
+  if (!document.getElementById('settings-dialog').open) return fail('settings did not open');
+  document.getElementById('settings-check-now').click();
+  await wait(1600);
   const sweepDialog = document.getElementById('sweep-dialog');
-  if (!sweepDialog.open) return fail('the check dialog did not open');
+  if (!sweepDialog.open) return fail('the check did not open from Settings');
 
   // Never-checked is the default, and the copy has to say why.
   const which = sweepDialog.querySelector('input[name="which"]:checked').value;
@@ -124,8 +135,11 @@ function fill(id, value) {
 
   const runCheck = async (which, apply) => {
     if (!sweepDialog.open) {
-      sweepBtn.click();
-      await wait(400);
+      // Reopen the way a person would, rather than by reaching into internals.
+      document.getElementById('rail-settings').click();
+      await wait(700);
+      document.getElementById('settings-check-now').click();
+      await wait(1400);
     }
     sweepDialog.querySelector(`input[name="which"][value="${which}"]`).click();
     document.getElementById('sweep-start').click();
@@ -174,18 +188,35 @@ function fill(id, value) {
   }
   out.push('ok   checking on its own hides nothing');
 
+  // Repeated checks on the same day must still hide nothing. The rule counts
+  // *days*, so three runs an hour apart is one bad evening rather than a dead
+  // channel -- and this is the assertion that keeps it that way.
   await runCheck('failed', true);
   result = await runCheck('failed', true);
   if (!result) return fail('the third check never finished');
+  if (/\d+ would be hidden/.test(result.counts)) {
+    return fail(`three checks in one day offered to hide (${result.counts}) -- the rule is days, not attempts`);
+  }
+  const sameDay = await bridge.debugHealth();
+  if (sameDay.summary.hidden > 0) return fail('repeated checks on one day hid something');
+  out.push('ok   three checks in one day still hide nothing, because the rule is days');
+
+  // To reach the threshold in a check without waiting a week, the threshold is
+  // set to one -- an actual setting a viewer can choose, applied through the
+  // same code path as everything else.
+  await bridge.setSettings({ deadDays: 1 });
+  await wait(600);
+  result = await runCheck('failed', true);
+  if (!result) return fail('the final check never finished');
 
   const wouldHide = Number((result.counts.match(/(\d+) would be hidden/) || [])[1] || 0);
   if (!wouldHide) {
-    return fail(`three failures in a row still hid nothing (${result.counts})`);
+    return fail(`a day of failures did not reach a one-day threshold (${result.counts})`);
   }
   if (!/^hide \d+/i.test(result.applyLabel)) {
     return fail(`the offer to hide is not labelled as one: "${result.applyLabel}"`);
   }
-  out.push(`ok   three failures in a row makes it offer: ${result.counts}`);
+  out.push(`ok   past the threshold it offers: ${result.counts}`);
 
   // The third check was run with apply, so it is applied too. Confirm the list
   // itself is untouched by any of this.
@@ -197,6 +228,12 @@ function fill(id, value) {
     return fail(`checking changed the list itself (${afterApply.summary.total} of ${afterSave.summary.total})`);
   }
   out.push(`ok   only then does it hide: ${afterApply.summary.hidden} of ${afterApply.summary.total}`);
+
+  // Only now. Putting the threshold back first would immediately un-hide them
+  // again -- each has one day of failures against a seven-day rule -- and the
+  // assertions below would be reading an empty list.
+  await bridge.setSettings({ deadDays: 7 });
+  await wait(600);
 
   /* --------------------------- hidden and back ---------------------------- */
 
