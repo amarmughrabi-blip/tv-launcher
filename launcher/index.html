@@ -116,7 +116,12 @@
              there are 27 genres, which is a lot of scrolling on a TV. -->
         <section class="tv" id="tv" hidden>
           <div class="tv-toolbar">
-            <div class="tv-genres" id="tv-genres" role="tablist" aria-label="Channel genres"></div>
+            <!-- Scrollable, and meant to look it. Twenty-eight genres will not
+                 fit on a television, and a strip with its scrollbar hidden just
+                 reads as a row of chips somebody cut off mid-word. -->
+            <div class="tv-genres-wrap" id="tv-genres-wrap">
+              <div class="tv-genres" id="tv-genres" role="tablist" aria-label="Channel genres"></div>
+            </div>
             <div class="tv-tools">
               <button type="button" class="btn btn-small" id="tv-hidden-toggle" hidden></button>
             </div>

@@ -941,8 +941,67 @@ body::before {
   scroll-snap-type: x proximity;
 }
 
+/*
+ * The scrollbar stays.
+ *
+ * Hiding it made the strip look broken rather than scrollable: the last chip was
+ * sheared off mid-word with nothing to say it went anywhere. It is thin and
+ * themed so it reads as part of the control.
+ */
 .tv-genres::-webkit-scrollbar {
-  display: none;
+  height: 5px;
+}
+
+.tv-genres::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tv-genres::-webkit-scrollbar-thumb {
+  background: var(--surface-6);
+  border-radius: 999px;
+}
+
+.tv-genres::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--glow-hue) 70% 55% / 0.7);
+}
+
+.tv-genres-wrap {
+  position: relative;
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+/*
+ * Fades at whichever end has more to show, so a chip is never cut off mid-word
+ * without looking cut off. The classes are set from the scroll position, so a
+ * fade never sits over the end of the list when there is nothing more there.
+ */
+.tv-genres-wrap::before,
+.tv-genres-wrap::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 12px;
+  width: 40px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.18s var(--ease);
+  z-index: 1;
+}
+
+.tv-genres-wrap::before {
+  left: 0;
+  background: linear-gradient(to right, var(--bg), transparent);
+}
+
+.tv-genres-wrap::after {
+  right: 0;
+  background: linear-gradient(to left, var(--bg), transparent);
+}
+
+.tv-genres-wrap.has-more-left::before,
+.tv-genres-wrap.has-more-right::after {
+  opacity: 1;
 }
 
 .tv-genre {
@@ -1101,7 +1160,6 @@ body::before {
 }
 
 .tv-genres {
-  flex: 1 1 240px;
   min-width: 0;
 }
 

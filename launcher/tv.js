@@ -187,9 +187,82 @@ function mountTv({ root, grid, genresBar, summaryEl, emptyEl, load, play, api, t
     hiddenRow: document.getElementById('tv-hidden-row'),
   };
 
+  const genresWrap = document.getElementById('tv-genres-wrap');
+
   let data = null;
   let active = 'all';
   let showHidden = false;
+
+  /**
+   * Fade whichever end of the strip has more to show.
+   *
+   * Measured rather than assumed: the strip scrolls, wraps to its own row on a
+   * narrow window, and changes length as genres are hidden in settings, so
+   * "there is more" is a fact about right now rather than a constant.
+   */
+  function updateScrollHints() {
+    if (!genresWrap) return;
+    const strip = genresBar;
+    const slack = strip.scrollWidth - strip.clientWidth;
+    genresWrap.classList.toggle('has-more-left', strip.scrollLeft > 4);
+    genresWrap.classList.toggle('has-more-right', slack > 4 && strip.scrollLeft < slack - 4);
+  }
+
+  genresBar.addEventListener('scroll', updateScrollHints, { passive: true });
+  window.addEventListener('resize', updateScrollHints);
+
+  /** Bring a chip into view, the way a click or an arrow key should. */
+  function revealGenre(genre) {
+    const chip = genresBar.querySelector(`.tv-genre[data-genre="${CSS.escape(genre)}"]`);
+    if (!chip) return;
+    // Measured as rects rather than with offsetLeft. offsetLeft is relative to
+    // the nearest *positioned* ancestor, and the strip is not one -- so the
+    // numbers were being compared against the wrong origin and a genre chosen by
+    // click was never brought into view.
+    const strip = genresBar.getBoundingClientRect();
+    const box = chip.getBoundingClientRect();
+    if (box.left < strip.left) {
+      genresBar.scrollBy({ left: box.left - strip.left - 12, behavior: 'smooth' });
+    } else if (box.right > strip.right) {
+      genresBar.scrollBy({ left: box.right - strip.right + 12, behavior: 'smooth' });
+    }
+    requestAnimationFrame(updateScrollHints);
+  }
+
+  /**
+   * Nudge the strip along.
+   *
+   * This is a television launcher driven by a remote, and left and right on the
+   * strip are how anyone would expect to move along it. Without this the only
+   * way across twenty-eight genres is a mouse wheel.
+   */
+  function scrollStrip(direction) {
+    const step = Math.max(120, genresBar.clientWidth * 0.7);
+    genresBar.scrollBy({ left: step * direction, behavior: 'smooth' });
+    // Recomputed directly as well as on the scroll event, which Chromium
+    // throttles while the window is unfocused -- so the fades would lag the
+    // strip instead of leading it.
+    requestAnimationFrame(updateScrollHints);
+  }
+
+  document.addEventListener('keydown', (event) => {
+    if (root.hidden) return;
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    // Not while typing, and not over a dialog. Deliberately not "only when
+    // nothing is focused": after clicking a rail button the focus is still on
+    // that button, and the arrows are exactly what somebody would press next.
+    const where = event.target;
+    if (where && (where.tagName === 'INPUT' || where.tagName === 'TEXTAREA' || where.isContentEditable)) return;
+    if (anyDialogOpen()) return;
+    // Only when the strip is actually wider than the window.
+    if (genresBar.scrollWidth <= genresBar.clientWidth + 4) return;
+    event.preventDefault();
+    scrollStrip(event.key === 'ArrowRight' ? 1 : -1);
+  });
+
+  function anyDialogOpen() {
+    return [...document.querySelectorAll('dialog[open]')].length > 0;
+  }
 
   /* ------------------------------ painting ---------------------------- */
 
@@ -283,6 +356,7 @@ function mountTv({ root, grid, genresBar, summaryEl, emptyEl, load, play, api, t
         active = key;
         paintGenres();
         paint();
+        revealGenre(key);
         grid.scrollIntoView({ block: 'start' });
       });
       return b;
@@ -292,6 +366,10 @@ function mountTv({ root, grid, genresBar, summaryEl, emptyEl, load, play, api, t
     for (const { genre, channels } of data.grouped) {
       genresBar.appendChild(make(genre, genre, channels.length));
     }
+    // Before measuring, and again after layout has settled: the first read can
+    // happen before the strip has been given its width.
+    updateScrollHints();
+    requestAnimationFrame(updateScrollHints);
   };
 
   const paintTools = () => {
