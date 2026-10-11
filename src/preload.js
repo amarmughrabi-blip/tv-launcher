@@ -13,7 +13,9 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 contextBridge.exposeInMainWorld('api', {
   listProfiles: () => ipcRenderer.invoke('profiles:list'),
   createProfile: (name) => ipcRenderer.invoke('profiles:create', { name }),
-  renameProfile: (id, name) => ipcRenderer.invoke('profiles:rename', { id, name }),
+  // `fields` must be forwarded: the store updates the avatar from it, and
+  // omitting it here meant a picked profile picture was silently discarded.
+  renameProfile: (id, name, fields) => ipcRenderer.invoke('profiles:rename', { id, name, fields }),
   deleteProfile: (id) => ipcRenderer.invoke('profiles:delete', { id }),
   activateProfile: (id) => ipcRenderer.invoke('profiles:activate', { id }),
   setProfileAvatar: (id, avatar) => ipcRenderer.invoke('profiles:avatar', { id, avatar }),
@@ -55,6 +57,10 @@ contextBridge.exposeInMainWorld('api', {
   debugRealClick: (x, y) => ipcRenderer.invoke('debug:real-click', { x, y }),
   debugPopups: () => ipcRenderer.invoke('debug:popups'),
   debugCosmetics: () => ipcRenderer.invoke('debug:cosmetics'),
+  // Start-up progress: the loading screen covers the window until 'ready'.
+  onBootNote: (fn) => ipcRenderer.on('boot:note', (_e, note) => fn(note)),
+  onAppReady: (fn) => ipcRenderer.on('app:ready', () => fn()),
+  isAppReady: () => ipcRenderer.invoke('app:ready-state'),
   onChromeVisible: (fn) => {
     ipcRenderer.on('chrome:visible', (_e, visible) => fn(visible));
   },

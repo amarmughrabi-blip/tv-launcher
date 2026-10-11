@@ -361,6 +361,27 @@ bridge.onChromeOffset((offset) => {
   document.documentElement.style.setProperty('--chrome-offset', `${offset}px`);
 });
 
+/*
+ * The loading screen. Startup blocks the main process for several seconds while
+ * the filter lists are parsed, so the window says so rather than going dead.
+ */
+const boot = document.getElementById('boot');
+const bootNote = document.getElementById('boot-note');
+
+bridge.onBootNote((note) => {
+  if (note && bootNote) bootNote.textContent = note;
+});
+
+bridge.onAppReady(() => {
+  if (boot) boot.hidden = true;
+});
+
+// Start-up may already have finished by the time this page loaded -- on a slow
+// machine the two race, and waiting only for the event would hang here forever.
+bridge.isAppReady().then((ready) => {
+  if (ready && boot) boot.hidden = true;
+});
+
 bridge.onChromeVisible((visible) => {
   el.bar.classList.toggle('bar-hidden', !visible);
 });

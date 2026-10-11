@@ -79,6 +79,18 @@ let cosmeticsApplied = 0;
  * browser on a site's say-so, so the live check watches for the symptom rather
  * than trusting a counter nobody increments.
  */
+/**
+ * Whether start-up has finished.
+ *
+ * The renderer asks on load as well as listening for the event. On a slow
+ * machine the page can finish loading *after* start-up completes, and a
+ * one-shot message would then arrive before anyone was listening, leaving the
+ * loading screen up with no way to take it down.
+ */
+let appReady = false;
+
+ipcMain.handle('app:ready-state', () => appReady);
+
 let popupsAttempted = 0;
 let popupsOpenedExternally = 0;
 /**
@@ -453,7 +465,7 @@ function sendToLauncher(channel, payload) {
 // profiles is just a state change followed by a reload.
 ipcMain.handle('profiles:list', () => store.listProfiles());
 ipcMain.handle('profiles:create', (_e, { name }) => store.createProfile(name));
-ipcMain.handle('profiles:rename', (_e, { id, name }) => store.renameProfile(id, name));
+ipcMain.handle('profiles:rename', (_e, { id, name, fields }) => store.renameProfile(id, name, fields || {}));
 ipcMain.handle('profiles:delete', (_e, { id }) => store.deleteProfile(id));
 ipcMain.handle('profiles:activate', (_e, { id }) => store.setActiveProfile(id));
 ipcMain.handle('profiles:avatar', (_e, { id, avatar }) => store.setProfileAvatar(id, avatar));
@@ -823,6 +835,20 @@ if (isPrimary) app.whenReady().then(async () => {
   mainWindow = createWindow();
   maybeCapture(mainWindow);
 
+  /*
+   * Let the loading screen paint before doing anything slow.
+   *
+   * Parsing the filter lists blocks the main process outright for several
+   * seconds, and it happens whether or not this window has been painted. A
+   * couple of event-loop turns first means the user is looking at something that
+   * says what is happening rather than at a window that has stopped responding.
+   */
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+  await settle();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('boot:note', 'Loading ad blocking');
+  }
+  await settle();
 
   // Non-fatal: a missing CDM does not stop the launcher, it only means no site
   // will ever play protected video here.
@@ -838,6 +864,10 @@ if (isPrimary) app.whenReady().then(async () => {
   } catch (err) {
     log(`ad blocking failed to load: ${err.message}`);
   }
+
+  // Startup is done: take the loading screen away.
+  appReady = true;
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('app:ready');
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow();

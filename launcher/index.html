@@ -10,6 +10,17 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
+    <!--
+      Shown until startup finishes. Parsing the filter lists blocks the main
+      process for seconds, and an unfrozen-looking window that will not respond
+      for that long is worse than one that admits what it is doing.
+    -->
+    <div id="boot" class="boot" role="status" aria-live="polite">
+      <div class="boot-mark"></div>
+      <p class="boot-text" id="boot-text">Starting TV Launcher…</p>
+      <p class="boot-note" id="boot-note">Loading ad blocking</p>
+    </div>
+
     <!-- The launcher's own bar: search and Add app.
          Over a site this page is behind the site view and shows nothing. The
          controls are injected into the page instead (src/site-controls.js),

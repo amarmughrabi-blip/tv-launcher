@@ -790,3 +790,45 @@ body::before {
     transition: none;
   }
 }
+/* ---------------- start-up ---------------- */
+
+/*
+ * Shown until the app is ready. Parsing the filter lists blocks the main
+ * process for a few seconds, so this is what the user looks at during it.
+ * Deliberately plain: no entrance animation, which could be throttled to a
+ * stuck frame in an unfocused window.
+ */
+.boot {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 14px;
+  background: var(--bg);
+}
+
+.boot[hidden] {
+  display: none !important;
+}
+
+.boot-mark {
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  background: hsl(var(--glow-hue) 85% 55%);
+  box-shadow: 0 8px 26px hsl(var(--glow-hue) 85% 45% / 0.4);
+}
+
+.boot-text {
+  margin: 0;
+  font-size: 17px;
+  color: var(--text);
+}
+
+.boot-note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
