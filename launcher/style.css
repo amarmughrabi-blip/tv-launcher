@@ -1709,3 +1709,78 @@ output {
   color: var(--text);
   font-weight: 600;
 }
+
+/* ============================ favourites ============================ */
+
+/*
+ * Pinned above the grid and always visible whatever genre is chosen. A favourite
+ * you have to go looking for is not a shortcut.
+ */
+.tv-favourites {
+  margin-bottom: 18px;
+}
+
+.tv-star {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.62);
+  color: rgba(255, 255, 255, 0.82);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s var(--ease), color 0.15s var(--ease);
+}
+
+.tv-tile:hover .tv-star,
+.tv-tile:focus-within .tv-star,
+.tv-star:focus-visible {
+  opacity: 1;
+}
+
+.tv-star svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linejoin: round;
+}
+
+/* Filled once starred, and always drawn: a starred channel should look starred
+   whether or not the pointer happens to be near it. */
+.tv-star.is-starred {
+  opacity: 1;
+  color: #ffd45e;
+}
+
+.tv-star.is-starred svg {
+  fill: currentColor;
+}
+
+.tv-star:hover,
+.tv-star:focus-visible {
+  background: rgba(0, 0, 0, 0.82);
+  outline: 2px solid hsl(var(--glow-hue) 92% 62% / 0.9);
+  outline-offset: 1px;
+}
+
+/* ===================== the combined search ===================== */
+
+.search-view {
+  display: grid;
+  gap: 18px;
+}
+
+.search-group[hidden] {
+  display: none;
+}
+
+.search-group .row-label {
+  margin-bottom: 10px;
+}

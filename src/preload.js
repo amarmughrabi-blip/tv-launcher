@@ -50,6 +50,8 @@ contextBridge.exposeInMainWorld('api', {
   /** Take a channel off the grid, or put it back. Neither touches the list itself. */
   hideChannel: (url) => ipcRenderer.invoke('channel:hide', { url }),
   restoreChannel: (url) => ipcRenderer.invoke('channel:restore', { url }),
+  favourites: () => ipcRenderer.invoke('favourites:get'),
+  toggleFavourite: (url) => ipcRenderer.invoke('favourites:toggle', { url }),
   addChannel: (record) => ipcRenderer.invoke('channel:add', record),
   updateChannel: (url, changes) => ipcRenderer.invoke('channel:update', { url, changes }),
   removeChannel: (url) => ipcRenderer.invoke('channel:remove', { url }),

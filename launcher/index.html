@@ -127,6 +127,12 @@
             </div>
           </div>
           <p class="tv-summary" id="tv-summary" hidden></p>
+          <!-- Pinned above everything, and always visible whatever genre is
+               chosen: a favourite you have to go looking for is not a shortcut. -->
+          <section class="tv-favourites" id="tv-favourites" hidden>
+            <h2 class="row-label">Favourites</h2>
+            <div class="tv-row" id="tv-favourites-row"></div>
+          </section>
           <div class="tv-grid" id="tv-grid"></div>
           <div class="tv-hidden" id="tv-hidden" hidden>
             <h2 class="row-label">Hidden channels</h2>
@@ -141,6 +147,21 @@
             <code>node scripts/import-channels.js</code>.
           </p>
         </section>
+
+        <!-- One results list for one search box. Apps and channels in the same
+             place, because typing "news" means a news channel whichever genre it
+             is filed under, and so does it probably mean Hacker News. -->
+        <main id="search-view" class="search-view" hidden>
+          <section class="search-group" id="search-channels-group" hidden>
+            <h2 class="row-label" id="search-channels-label">Channels</h2>
+            <div class="tv-row" id="search-channels"></div>
+          </section>
+          <section class="search-group" id="search-apps-group" hidden>
+            <h2 class="row-label">Apps</h2>
+            <div class="grid" id="search-apps"></div>
+          </section>
+          <p class="tv-empty" id="search-empty" hidden>Nothing matches that.</p>
+        </main>
 
         <main id="grid" class="grid"></main>
       </div>
@@ -361,7 +382,7 @@
           <!-- Shown when the settings could not be read. Without it a failed
                request looks exactly like a button that does not work. -->
           <p class="settings-problem" id="settings-problem" hidden></p>
-          <!-- ------------------------------ theme ------------------------------ -->
+          <!-- ============================== theme ============================== -->
           <section class="settings-section" data-section="theme">
             <label class="field">
               <span>Theme</span>
@@ -377,7 +398,7 @@
             </label>
           </section>
 
-          <!-- ----------------------------- channels ----------------------------- -->
+          <!-- ============================= channels ============================= -->
           <section class="settings-section is-active" data-section="channels">
             <div class="field">
               <span>Genres to show</span>
@@ -434,7 +455,7 @@
             </div>
           </section>
 
-          <!-- ----------------------------- playback ----------------------------- -->
+          <!-- ============================= playback ============================= -->
           <section class="settings-section" data-section="playback">
             <label class="field switch-field">
               <span>Mute on open</span>
@@ -488,7 +509,7 @@
             </label>
           </section>
 
-          <!-- ----------------------------- blocking ----------------------------- -->
+          <!-- ============================= blocking ============================= -->
           <section class="settings-section" data-section="blocking">
             <label class="field switch-field">
               <span>Ad blocking</span>

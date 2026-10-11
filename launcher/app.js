@@ -31,6 +31,12 @@ const el = {
   tabs: document.getElementById('tabs'),
   tv: document.getElementById('tv'),
   tvGrid: document.getElementById('tv-grid'),
+  searchView: document.getElementById('search-view'),
+  searchChannelsGroup: document.getElementById('search-channels-group'),
+  searchChannelsRow: document.getElementById('search-channels'),
+  searchAppsGroup: document.getElementById('search-apps-group'),
+  searchApps: document.getElementById('search-apps'),
+  searchEmpty: document.getElementById('search-empty'),
   tvGenres: document.getElementById('tv-genres'),
   tvSummary: document.getElementById('tv-summary'),
   tvEmpty: document.getElementById('tv-empty'),
@@ -508,7 +514,77 @@ el.addForm.addEventListener('submit', async (e) => {
 el.search.addEventListener('input', () => {
   filter = el.search.value;
   render();
+  renderSearch();
 });
+
+/**
+ * One results list for one search box.
+ *
+ * Apps and channels together, and channels from every genre rather than only
+ * the one on screen -- otherwise typing "news" could only ever find what was
+ * already showing, which is not a search. Shown whichever tab is open, because a
+ * search that only works from one tab is two searches with one box.
+ */
+async function renderSearch() {
+  const query = filter.trim();
+  const searching = query.length > 0;
+  el.searchView.hidden = !searching;
+  if (!searching) {
+    el.grid.hidden = false;
+    el.tv.hidden = tab !== 'tv';
+    el.tabs.hidden = tab !== 'tv';
+    return;
+  }
+
+  // The grids step aside rather than sitting behind the results.
+  el.grid.hidden = true;
+  el.tv.hidden = true;
+  el.tabs.hidden = true;
+
+  const channels = await tv.searchChannels(query);
+  // The box may have been emptied, or a different word typed, while the list was
+  // loading. Painting results for a word nobody is looking at any more is worse
+  // than painting nothing.
+  if (filter.trim() !== query) return;
+  el.searchChannelsGroup.hidden = channels.length === 0;
+  el.searchChannelsRow.replaceChildren();
+  for (const channel of channels) {
+    el.searchChannelsRow.appendChild(tv.buildChannelTile(channel, playChannel));
+  }
+
+  const apps = visibleSites(query);
+  el.searchAppsGroup.hidden = apps.length === 0;
+  el.searchApps.replaceChildren();
+  for (const record of apps) el.searchApps.appendChild(buildTile(record));
+
+  const nothing = channels.length === 0 && apps.length === 0;
+  el.searchEmpty.hidden = !nothing;
+  if (nothing) {
+    el.searchEmpty.textContent = `Nothing matches “${query}”.`;
+  }
+}
+
+function visibleSites(query) {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return sites;
+  // The same ranking the channel search uses: an exact label first, then a
+  // prefix, then a match anywhere. Two lists ordered the same way read as one
+  // list rather than as two things that happen to be near each other.
+  const hits = [];
+  for (const record of sites) {
+    const label = (record.label || '').toLowerCase();
+    if (!label.includes(needle)) continue;
+    hits.push({ record, rank: label === needle ? 0 : label.startsWith(needle) ? 1 : 2 });
+  }
+  hits.sort((a, b) => a.rank - b.rank
+    || a.record.label.localeCompare(b.record.label, undefined, { sensitivity: 'base' }));
+  return hits.slice(0, 40).map((h) => h.record);
+}
+
+async function playChannel(channel) {
+  const result = await bridge.playChannel(channel.url);
+  if (!result || !result.ok) toast(`Could not open ${channel.name}`);
+}
 
 /* ------------------------------- TV ---------------------------------- */
 
@@ -604,6 +680,11 @@ function setTab(next) {
   else tv.hide();
   el.grid.hidden = onTv;
   el.tabs.hidden = onTv;
+
+  // Last, so it wins. Switching tabs while something is typed must not pull the
+  // results off the screen: the search box belongs to no particular tab, and a
+  // result that vanished when you clicked TV would look like the search lost it.
+  renderSearch();
 
   // Opening Search focuses the field so typing works straight away.
   if (tab === 'search') {

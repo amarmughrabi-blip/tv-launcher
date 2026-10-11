@@ -143,7 +143,26 @@ function buildTile(channel, handlers) {
 
   if (channel.source === 'added') tile.classList.add('is-added');
 
-  tile.append(face, name, pencil);
+  /*
+   * The star sits inside the tile rather than in a menu, for the same reason the
+   * pencil does: this is a television, and anything two clicks deep is a thing
+   * nobody finds.
+   */
+  const star = document.createElement('button');
+  star.type = 'button';
+  star.className = `tv-star${channel.starred ? ' is-starred' : ''}`;
+  star.dataset.url = channel.url;
+  star.title = channel.starred ? 'Remove from favourites' : 'Add to favourites';
+  star.setAttribute('aria-label', star.title);
+  star.setAttribute('aria-pressed', String(Boolean(channel.starred)));
+  star.innerHTML =
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.6l2.6 5.4 5.9.8-4.3 4.1 1.1 5.9L12 17l-5.3 2.8 1.1-5.9L3.5 9.8l5.9-.8z"/></svg>';
+  star.addEventListener('click', (event) => {
+    event.stopPropagation();
+    handlers.star(channel, star);
+  });
+
+  tile.append(face, name, pencil, star);
   tile.addEventListener('click', () => handlers.play(channel));
   return tile;
 }
@@ -188,6 +207,8 @@ function mountTv({ root, grid, genresBar, summaryEl, emptyEl, load, play, api, t
   };
 
   const genresWrap = document.getElementById('tv-genres-wrap');
+  const favouritesPanel = document.getElementById('tv-favourites');
+  const favouritesRow = document.getElementById('tv-favourites-row');
 
   let data = null;
   let active = 'all';
@@ -266,7 +287,23 @@ function mountTv({ root, grid, genresBar, summaryEl, emptyEl, load, play, api, t
 
   /* ------------------------------ painting ---------------------------- */
 
+  /**
+   * The pinned row.
+   *
+   * Painted from its own list rather than filtered out of the grid, so it stays
+   * put whichever genre is chosen and does not appear twice when the chosen genre
+   * happens to contain a favourite.
+   */
+  const paintFavourites = () => {
+    const list = data && data.favourites ? data.favourites : [];
+    favouritesPanel.hidden = list.length === 0;
+    if (!list.length) return;
+    favouritesRow.replaceChildren();
+    for (const channel of list) favouritesRow.appendChild(buildTile(channel, handlers));
+  };
+
   const paint = () => {
+    paintFavourites();
     grid.replaceChildren();
     if (!data || !data.grouped.length) {
       emptyEl.hidden = false;
@@ -380,8 +417,26 @@ function mountTv({ root, grid, genresBar, summaryEl, emptyEl, load, play, api, t
     els.hiddenToggle.setAttribute('aria-pressed', String(showHidden));
   };
 
+  let loading = null;
   const loadData = async () => {
-    data = await load();
+    // Shared: a search and a tab switch arriving together must not fetch the
+    // list twice, or the second would overwrite the first's results.
+    if (loading) return loading;
+    loading = (async () => {
+      data = await load();
+    // Flagged once here rather than looked up per tile, so painting the grid does
+    // not mean reading a file for every channel on it.
+    const starred = new Set(data.starred || []);
+    const seen = new Set();
+    const flag = (channel) => {
+      const copy = { ...channel, starred: starred.has(channel.url) };
+      // The same channel can appear in the favourites row and in its genre.
+      if (seen.has(copy.url)) return copy;
+      seen.add(copy.url);
+      return copy;
+    };
+    data.favourites = (data.favourites || []).map(flag);
+    data.grouped = data.grouped.map((g) => ({ ...g, channels: g.channels.map(flag) }));
     if (data.summary.hidden > 0) {
       summaryEl.textContent =
         `${data.summary.hidden} of ${data.summary.total} channels are hidden because they stopped working.`;
@@ -392,10 +447,14 @@ function mountTv({ root, grid, genresBar, summaryEl, emptyEl, load, play, api, t
     // Keep the current genre if it still exists, so a reload does not throw the
     // viewer back to "All".
     if (active !== 'all' && !data.grouped.some((g) => g.genre === active)) active = 'all';
-    paintTools();
-    paintGenres();
-    paint();
-    paintHidden();
+      paintTools();
+      paintGenres();
+      paint();
+      paintHidden();
+    })().finally(() => {
+      loading = null;
+    });
+    return loading;
   };
 
   /* ------------------------- adding and filing ------------------------ */
@@ -693,9 +752,80 @@ function mountTv({ root, grid, genresBar, summaryEl, emptyEl, load, play, api, t
 
   /* ------------------------------ wiring ----------------------------- */
 
-  const handlers = { play, edit: openEditor };
+  const handlers = {
+    play,
+    edit: openEditor,
+    star: async (channel, button) => {
+      // Painted immediately and rolled back if the call fails, because a star
+      // that lies about the list is worse than no star at all.
+      const was = button.classList.contains('is-starred');
+      button.classList.toggle('is-starred', !was);
+      button.setAttribute('aria-pressed', String(!was));
+      const result = await api.toggleFavourite(channel.url);
+      if (!result || !result.ok) {
+        button.classList.toggle('is-starred', was);
+        button.setAttribute('aria-pressed', String(was));
+        return;
+      }
+      await loadData();
+    },
+  };
+
+  /**
+   * Channel matches for the search box, across every genre.
+   *
+   * Not filtered by the chosen genre: the whole point of searching is to find a
+   * channel you are not currently looking at. Restricted to the visible genre it
+   * would only ever find what was already on screen.
+   */
+  async function searchChannels(query, limit = 60) {
+    // The channel list is only fetched when the TV page is first opened, so a
+    // search typed on the Home tab before anyone had been to TV would have found
+    // nothing and said so. Loaded on demand instead -- once, and awaited, so the
+    // results are there when the box stops moving.
+    if (!data) await loadData();
+    if (!data || !query) return [];
+    const needle = query.trim().toLowerCase();
+    if (!needle) return [];
+    const starred = new Set(data.starred || []);
+
+    const hits = [];
+    const seenHere = new Set();
+    for (const { genre, channels } of data.grouped) {
+      const genreHit = String(genre).toLowerCase().includes(needle);
+      for (const channel of channels) {
+        // A channel matches on its genre as well as its name. Typing "news" has
+        // to find every news channel there is, and most of them are not called
+        // anything like news -- that is the whole difference between a search
+        // and a filter, and searching names alone quietly reduces it to the
+        // latter.
+        const name = channel.name.toLowerCase();
+        const inName = name.includes(needle);
+        if (!inName && !genreHit) continue;
+        if (seenHere.has(channel.url)) continue;
+        seenHere.add(channel.url);
+
+        // Ranked so the best match leads: an exact name, then a name containing
+        // it, then a name merely matching, and a genre match last. Sorted
+        // alphabetically within a rank, which is steadier than whichever order
+        // the genres happened to come back in.
+        const rank = name === needle
+          ? 0
+          : inName
+            ? (name.startsWith(needle) ? 1 : 2)
+            : 3;
+        hits.push({ channel: { ...channel, starred: starred.has(channel.url) }, rank });
+      }
+    }
+
+    hits.sort((a, b) => a.rank - b.rank
+      || a.channel.name.localeCompare(b.channel.name, undefined, { sensitivity: 'base' }));
+    return hits.slice(0, limit).map((h) => h.channel);
+  }
 
   return {
+    searchChannels,
+    buildChannelTile: (channel, onPlay) => buildTile(channel, { ...handlers, play: onPlay }),
     show: () => {
       root.hidden = false;
       if (!data) loadData();

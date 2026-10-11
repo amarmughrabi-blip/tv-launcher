@@ -38,6 +38,8 @@ const paths = {
    * these", a setting is "how this launcher behaves", and they get out of step.
    */
   settingsFile: () => path.join(dataRoot(), 'settings.json'),
+  /** Starred channels, in the order they were starred. */
+  favouritesFile: () => path.join(dataRoot(), 'favourites.json'),
   iconsDir: () => path.join(dataRoot(), 'icons'),
   cacheDir: () => path.join(dataRoot(), 'cache'),
   /** Scratch space for browser state that must not live beside user data. */

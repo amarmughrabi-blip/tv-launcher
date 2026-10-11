@@ -26,6 +26,7 @@ const probe = require('./src/channel-probe');
 const { explain } = require('./src/channel-health');
 const sweepEngine = require('./src/sweep');
 const settings = require('./src/settings');
+const favourites = require('./src/favourites');
 
 const readChannelHealth = channels.readHealth;
 const writeChannelHealth = channels.writeHealth;
@@ -616,6 +617,7 @@ ipcMain.handle('site:open', async (_e, { url }) => {
  */
 ipcMain.handle('channels:get', () => {
   const s = settingsCache;
+  const starred = new Set(favourites.urls());
   const grouped = channels.grouped()
     .filter((g) => settings.genreVisible(g.genre, s))
     .map((g) => ({
@@ -632,6 +634,13 @@ ipcMain.handle('channels:get', () => {
     hidden: channels.hidden(),
     genres: channels.GENRES,
     newGenre: channels.NEW_GENRE,
+    // Sent with the list rather than fetched separately, so a starred channel
+    // draws its star on the same paint as the tile.
+    starred: [...starred],
+    // The pinned row, already filtered to channels that still exist and are not
+    // hidden. A favourite that has been removed or has gone quiet is reported
+    // separately rather than offered as a tile that will not play.
+    favourites: favourites.channels(),
   };
 });
 
@@ -821,6 +830,24 @@ ipcMain.handle('sweep:cancel', () => {
   sweepToken += 1;
   lastSweep = null;
   return { ok: true };
+});
+
+/* ------------------------------ favourites ------------------------------ */
+
+ipcMain.handle('favourites:get', () => ({
+  urls: favourites.urls(),
+  // Already filtered to channels that still exist and are not hidden: a
+  // favourite that has gone quiet is not something to put in front of anybody.
+  channels: favourites.channels(),
+  // Starred but gone, reported rather than dropped. A channel that has vanished
+  // is the one you want to know about, and it is the one that would otherwise
+  // leave you wondering where it went.
+  missing: favourites.missing(),
+}));
+
+ipcMain.handle('favourites:toggle', (_e, { url } = {}) => {
+  const result = favourites.toggle(url);
+  return { ...result, channels: favourites.channels() };
 });
 
 ipcMain.handle('channel:hide', (_e, { url } = {}) => {
