@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=TV Launcher
+Comment=TV-style launcher for streaming sites
+Exec=tv-launcher
+Icon=io.github.amarmughrabi_blip.TvLauncher
+Categories=AudioVideo;Video;
+Terminal=false

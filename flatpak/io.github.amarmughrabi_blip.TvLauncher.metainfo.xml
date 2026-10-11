@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.amarmughrabi_blip.TvLauncher</id>
+  <name>TV Launcher</name>
+  <summary>TV-style launcher for streaming sites</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <description>
+    <p>A TV-style launcher for streaming sites, with ad blocking and DRM playback in-window.</p>
+  </description>
+  <launchable type="desktop-id">io.github.amarmughrabi_blip.TvLauncher.desktop</launchable>
+  <url type="homepage">https://github.com/amarmughrabi-blip/tv-launcher</url>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-10-11"/>
+  </releases>
+</component>

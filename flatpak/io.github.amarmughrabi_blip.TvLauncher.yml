@@ -1,0 +1,43 @@
+app-id: io.github.amarmughrabi_blip.TvLauncher
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+base: org.electronjs.Electron2.BaseApp
+base-version: '25.08'
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.node22
+command: tv-launcher
+finish-args:
+  - --share=network
+  - --share=ipc
+  - --socket=x11
+  - --socket=wayland
+  - --socket=pulseaudio
+  - --device=dri
+modules:
+  - name: tv-launcher
+    buildsystem: simple
+    build-options:
+      build-args:
+        - --share=network
+      append-path: /usr/lib/sdk/node22/bin
+    build-commands:
+      - ./scripts/setup-ecs.sh
+      - mkdir -p /app/lib/tv-launcher
+      - cp -r main.js package.json launcher src node_modules vendor /app/lib/tv-launcher/
+      - install -Dm755 tv-launcher.sh /app/bin/tv-launcher
+      - install -Dm644 io.github.amarmughrabi_blip.TvLauncher.desktop /app/share/applications/io.github.amarmughrabi_blip.TvLauncher.desktop
+      - install -Dm644 io.github.amarmughrabi_blip.TvLauncher.metainfo.xml /app/share/metainfo/io.github.amarmughrabi_blip.TvLauncher.metainfo.xml
+      - install -Dm644 io.github.amarmughrabi_blip.TvLauncher.png /app/share/icons/hicolor/256x256/apps/io.github.amarmughrabi_blip.TvLauncher.png
+    sources:
+      - type: git
+        url: file:///home/yuta/tv-launcher
+        branch: main
+      - type: file
+        path: tv-launcher.sh
+      - type: file
+        path: io.github.amarmughrabi_blip.TvLauncher.desktop
+      - type: file
+        path: io.github.amarmughrabi_blip.TvLauncher.metainfo.xml
+      - type: file
+        path: io.github.amarmughrabi_blip.TvLauncher.png
