@@ -9,7 +9,13 @@
  * a window.
  *
  * On disk:
- *   channels.json  { "channels": [ { name, genre, country, res, logo, url } ] }
+ *   channels.json  { "channels": [ { name, genre, country, res, logo, url,
+ *                                    source } ] }
+ *
+ * `source` says where a channel came from: `master` for the imported list,
+ * `added` for one the viewer put in by hand. The import replaces master entries
+ * and leaves added ones alone, so re-running it cannot quietly destroy a
+ * channel somebody found and kept on purpose.
  *
  * `channel-health.json` is written by the health check and merged over the
  * master list at read time, so probing never rewrites the list itself.
@@ -35,8 +41,19 @@ const fs = require('node:fs');
 const { paths } = require('./paths');
 const { shouldCount } = require('./channel-health');
 
+/**
+ * Where a hand-added channel lands until somebody files it properly.
+ *
+ * It is a working pile, not a category: every channel added by hand would
+ * otherwise have to be forced into one of the researched genres, and most
+ * people cannot tell whether "general" or "entertainment" is right for a
+ * stream they found. It sorts to the top so the pile is easy to find and easy
+ * to empty.
+ */
+const NEW_GENRE = 'new channel';
+
 const GENRES = [
-  'news', 'sports', 'movies', 'series', 'entertainment', 'kids', 'family',
+  NEW_GENRE, 'news', 'sports', 'movies', 'series', 'entertainment', 'kids', 'family',
   'animation', 'music', 'documentary', 'classic', 'comedy', 'lifestyle',
   'business', 'culture', 'education', 'science', 'general', 'religious',
   'shop', 'cooking', 'travel', 'outdoor', 'auto', 'weather', 'relax',
@@ -47,7 +64,7 @@ const GENRES = [
  * Rough order for the genre strip. What people reach for first comes first;
  * everything else keeps its own alphabetical order after these.
  */
-const GENRE_ORDER = ['general', 'news', 'sports', 'movies', 'series', 'kids', 'entertainment', 'music', 'documentary'];
+const GENRE_ORDER = [NEW_GENRE, 'general', 'news', 'sports', 'movies', 'series', 'kids', 'entertainment', 'music', 'documentary'];
 
 function empty() {
   return { channels: [] };
@@ -87,6 +104,7 @@ function normalise(record) {
   return {
     name,
     url,
+    source: record.source === 'added' ? 'added' : 'master',
     genre: GENRES.includes(genre) ? genre : genre,
     country: String(record.country ?? '').trim().toUpperCase() || null,
     res: String(record.res ?? '').trim() || null,
@@ -160,6 +178,11 @@ function recordResult(url, { ok, reason = null }) {
     fails,
     hidden: fails >= FAILURES_BEFORE_DROP,
   };
+}
+
+/** The raw health records, for a sweep to merge into. */
+function readHealth() {
+  return readJson(paths.channelHealthFile(), {});
 }
 
 function writeHealth(state) {
@@ -251,9 +274,104 @@ function writeAll(records) {
     channels.push(channel);
   }
   channels.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
-  fs.mkdirSync(paths.appDir(), { recursive: true });
-  fs.writeFileSync(paths.channelsFile(), `${JSON.stringify({ channels }, null, 1)}\n`);
+
+  // Anything the viewer added by hand is kept. An import is meant to refresh the
+  // researched list, not to quietly delete a stream somebody found themselves.
+  const base = readJson(paths.channelsFile(), empty());
+  const existing = Array.isArray(base.channels) ? base.channels : [];
+  for (const record of existing) {
+    const channel = normalise(record);
+    if (!channel || channel.source !== 'added' || seen.has(channel.url)) continue;
+    seen.add(channel.url);
+    channels.push(channel);
+  }
+
+  save(channels);
   return channels.length;
+}
+
+/** The stored list, without health merged in. For editing. */
+function stored() {
+  const base = readJson(paths.channelsFile(), empty());
+  const list = Array.isArray(base.channels) ? base.channels : [];
+  const out = [];
+  const seen = new Set();
+  for (const record of list) {
+    const channel = normalise(record);
+    if (!channel || seen.has(channel.url)) continue;
+    seen.add(channel.url);
+    out.push(channel);
+  }
+  return out;
+}
+
+/** Write the list back, keeping the order it already had. */
+function save(list) {
+  fs.mkdirSync(paths.appDir(), { recursive: true });
+  fs.writeFileSync(paths.channelsFile(), `${JSON.stringify({ channels: list }, null, 1)}\n`);
+}
+
+/**
+ * Put a channel in by hand.
+ *
+ * It lands in the new-channel pile rather than being forced into a researched
+ * genre, because guessing wrong is worse than leaving it obviously unsorted.
+ */
+function add(record) {
+  const channel = normalise({
+    ...record,
+    genre: String(record.genre ?? '').trim().toLowerCase() || NEW_GENRE,
+    source: 'added',
+  });
+  if (!channel) return { ok: false, error: 'A name and a stream link are needed' };
+
+  const list = stored();
+  if (list.some((c) => c.url === channel.url)) {
+    return { ok: false, error: 'That channel is already in the list' };
+  }
+  list.push(channel);
+  save(list);
+  forget(channel.url);
+  return { ok: true, channel };
+}
+
+/** Change a channel. The URL may change; the list is keyed on it, so it moves. */
+function update(url, changes) {
+  const list = stored();
+  const at = list.findIndex((c) => c.url === url);
+  if (at === -1) return { ok: false, error: 'That channel is no longer in the list' };
+
+  const merged = normalise({ ...list[at], ...changes, url: changes.url ?? url });
+  if (!merged) return { ok: false, error: 'A name and a usable stream link are needed' };
+  if (merged.url !== url && list.some((c) => c.url === merged.url)) {
+    return { ok: false, error: 'Another channel already uses that link' };
+  }
+
+  list[at] = merged;
+  save(list);
+  // Health is recorded against the old address, and means nothing for a new one.
+  if (merged.url !== url) forget(url);
+  return { ok: true, channel: merged };
+}
+
+/**
+ * Remove a channel from the list.
+ *
+ * Only ever called by hand. Automatic pruning hides and never deletes, so a
+ * bad sweep cannot cost somebody a channel they found themselves.
+ */
+function remove(url) {
+  const list = stored();
+  const kept = list.filter((c) => c.url !== url);
+  if (kept.length === list.length) return { ok: false, error: 'That channel is not in the list' };
+  save(kept);
+  forget(url);
+  return { ok: true };
+}
+
+/** The channels currently hidden, for the view that puts them back. */
+function hidden() {
+  return all().filter((c) => c.dead);
 }
 
 module.exports = {
@@ -263,13 +381,21 @@ module.exports = {
   summary,
   findByUrl,
   writeAll,
+  add,
+  update,
+  remove,
+  hidden,
+  stored,
   recordResult,
+  readHealth,
+  writeHealth,
   forget,
   restore,
   hide,
   usableUrl,
   normalise,
   FAILURES_BEFORE_DROP,
+  NEW_GENRE,
   GENRES,
   GENRE_ORDER,
 };

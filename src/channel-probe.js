@@ -11,6 +11,13 @@
  * real error is visible: DNS, a refused connection, a 404, or a body that turns
  * out to be an HTML page. That answer is used twice -- to decide whether the
  * channel counts towards being hidden, and to tell the viewer what happened.
+ *
+ * Two depths:
+ *
+ *   quick  the manifest only. Cheap, and catches everything except a manifest
+ *          that parses perfectly while every segment behind it is gone.
+ *   deep   the manifest and then the first segment. Slower and heavier, and the
+ *          only way to be sure a channel that answers is actually watchable.
  */
 
 const https = require('node:https');
@@ -21,7 +28,14 @@ const TIMEOUT_MS = 8000;
 const HEAD_BYTES = 4096;
 const USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120 Safari/537.36';
 
-function probe(url, redirects = 0) {
+/**
+ * One HTTP GET, returning the head of the body.
+ *
+ * Deliberately not Node's fetch: this needs the underlying error code. Every
+ * layer above this turns ENOTFOUND and ETIMEDOUT into an opaque "network
+ * error", which is the exact distinction the health check turns on.
+ */
+function get(url, { redirects = 0 } = {}) {
   return new Promise((resolve) => {
     let parsed;
     try {
@@ -37,6 +51,7 @@ function probe(url, redirects = 0) {
       { timeout: TIMEOUT_MS, headers: { 'User-Agent': USER_AGENT } },
       (res) => {
         const status = res.statusCode;
+
         if (status >= 300 && status < 400 && res.headers.location) {
           res.resume();
           if (redirects >= 5) {
@@ -50,7 +65,7 @@ function probe(url, redirects = 0) {
             resolve({ ok: false, reason: 'gone' });
             return;
           }
-          probe(next, redirects + 1).then(resolve);
+          get(next, { redirects: redirects + 1 }).then(resolve);
           return;
         }
 
@@ -64,27 +79,18 @@ function probe(url, redirects = 0) {
         res.setEncoding('utf8');
         res.on('data', (chunk) => {
           body += chunk;
-          // The head of a manifest is enough; pulling every segment reference
-          // would be a lot of traffic for no extra signal.
+          // The head is enough. Pulling every segment reference would be a lot
+          // of traffic for no extra signal.
           if (body.length >= HEAD_BYTES) {
             res.destroy();
             finish();
           }
         });
         res.on('end', finish);
-        res.on('error', () => resolve({ ok: false, reason: 'reset' }));
+        res.on('error', () => resolve({ ok: false, code: 'ECONNRESET' }));
 
         function finish() {
-          if (!body.startsWith('#EXTM3U')) {
-            resolve({ ok: false, body: 'not a manifest' });
-            return;
-          }
-          if (!/#EXTINF/.test(body)) {
-            // A valid manifest with no segments is a channel that has gone quiet.
-            resolve({ ok: false, body: 'no segments' });
-            return;
-          }
-          resolve({ ok: true });
+          resolve({ ok: true, body, url });
         }
       },
     );
@@ -97,6 +103,49 @@ function probe(url, redirects = 0) {
   });
 }
 
+/** The first media segment named in a manifest, resolved against its own URL. */
+function firstSegment(manifest, manifestUrl) {
+  for (const line of manifest.split('\n')) {
+    const entry = line.trim();
+    if (!entry || entry.startsWith('#')) continue;
+    try {
+      return new URL(entry, manifestUrl).toString();
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/**
+ * Check a stream.
+ *
+ * @param {string} url        the manifest address
+ * @param {object} [options]
+ * @param {boolean} [options.deep] also fetch the first segment
+ */
+async function probe(url, { deep = false } = {}) {
+  const result = await get(url);
+  if (!result.ok) return result;
+
+  const body = result.body || '';
+  if (!body.startsWith('#EXTM3U')) return { ok: false, body: 'not a manifest' };
+  if (!/#EXTINF/.test(body)) {
+    // A valid manifest with no segments is a channel that has gone quiet.
+    return { ok: false, body: 'no segments' };
+  }
+
+  if (!deep) return { ok: true };
+
+  const segment = firstSegment(body, result.url);
+  if (!segment) return { ok: false, body: 'no segments' };
+
+  const part = await get(segment);
+  if (!part.ok) return { ok: false, stage: 'segment', ...part };
+  if (!(part.body || '').length) return { ok: false, body: 'empty segment', stage: 'segment' };
+  return { ok: true };
+}
+
 /** Turn a raw probe result into a health reason. */
 function classify(result) {
   if (result.ok) return 'ok';
@@ -107,4 +156,4 @@ function classify(result) {
   });
 }
 
-module.exports = { probe, classify, TIMEOUT_MS };
+module.exports = { probe, classify, get, firstSegment, TIMEOUT_MS };

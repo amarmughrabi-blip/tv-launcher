@@ -494,6 +494,11 @@ const tv = window.mountTv({
   summaryEl: el.tvSummary,
   emptyEl: el.tvEmpty,
   load: () => bridge.channels(),
+  // Passed in rather than reached for. Classic scripts share one global scope,
+  // and this file has already been bitten once by borrowing a name it should
+  // not have.
+  api: bridge,
+  toast,
   play: async (channel) => {
     const result = await bridge.playChannel(channel.url);
     if (!result || !result.ok) {

@@ -50,6 +50,14 @@ contextBridge.exposeInMainWorld('api', {
   /** Take a channel off the grid, or put it back. Neither touches the list itself. */
   hideChannel: (url) => ipcRenderer.invoke('channel:hide', { url }),
   restoreChannel: (url) => ipcRenderer.invoke('channel:restore', { url }),
+  addChannel: (record) => ipcRenderer.invoke('channel:add', record),
+  updateChannel: (url, changes) => ipcRenderer.invoke('channel:update', { url, changes }),
+  removeChannel: (url) => ipcRenderer.invoke('channel:remove', { url }),
+  /** Check a batch of channels. Nothing is written until the result is applied. */
+  startSweep: (options) => ipcRenderer.invoke('sweep:start', options),
+  applySweep: (token) => ipcRenderer.invoke('sweep:apply', { token }),
+  cancelSweep: () => ipcRenderer.invoke('sweep:cancel'),
+  onSweepProgress: (fn) => ipcRenderer.on('sweep:progress', (_e, detail) => fn(detail)),
   currentSite: () => ipcRenderer.invoke('site:current'),
 
   braveAvailable: () => ipcRenderer.invoke('brave:available'),

@@ -24,6 +24,10 @@ const { CONTROLS_SCRIPT } = require('./src/site-controls');
 const channels = require('./src/channels');
 const probe = require('./src/channel-probe');
 const { explain } = require('./src/channel-health');
+const sweepEngine = require('./src/sweep');
+
+const readChannelHealth = channels.readHealth;
+const writeChannelHealth = channels.writeHealth;
 const player = require('./src/player');
 const store = require('./src/store');
 const icons = require('./src/icons');
@@ -558,6 +562,9 @@ ipcMain.handle('site:open', (_e, { url }) => openSite(url));
 ipcMain.handle('channels:get', () => ({
   grouped: channels.grouped(),
   summary: channels.summary(),
+  hidden: channels.hidden(),
+  genres: channels.GENRES,
+  newGenre: channels.NEW_GENRE,
 }));
 
 /**
@@ -642,6 +649,98 @@ ipcMain.on('player:playing', (_e, { url } = {}) => {
   // A channel that plays clears its run, so a channel is never hidden for
   // failures that were followed by a good one.
   if (url) channels.recordResult(url, { ok: true });
+});
+
+ipcMain.handle('channel:add', (_e, record = {}) => {
+  const result = channels.add(record);
+  return { ...result, grouped: channels.grouped(), summary: channels.summary() };
+});
+
+ipcMain.handle('channel:update', (_e, { url, changes } = {}) => {
+  const result = channels.update(url, changes || {});
+  return { ...result, grouped: channels.grouped(), summary: channels.summary() };
+});
+
+ipcMain.handle('channel:remove', (_e, { url } = {}) => {
+  const result = channels.remove(url);
+  return { ...result, grouped: channels.grouped(), summary: channels.summary() };
+});
+
+/**
+ * The last sweep, held so it can be looked at before it is believed.
+ *
+ * Only one is ever kept, and applying checks the token. Re-probing to confirm a
+ * result would double the traffic and could give a different answer the second
+ * time, so the run is remembered instead.
+ */
+let lastSweep = null;
+let sweepToken = 0;
+
+ipcMain.handle('sweep:start', async (_e, options = {}) => {
+  const which = ['all', 'unchecked', 'failed'].includes(options.which) ? options.which : 'unchecked';
+  const deep = options.deep === true;
+  const list = which === 'failed' ? channels.all().filter((c) => c.fails > 0) : channels.all();
+
+  sweepToken += 1;
+  const mine = sweepToken;
+  lastSweep = null;
+
+  const report = await sweepEngine.sweep(
+    list,
+    { which, deep },
+    ({ done, total, name }) => {
+      if (mine !== sweepToken) return;
+      sendToLauncher('sweep:progress', { done, total, name });
+    },
+  );
+
+  // A newer sweep overtook this one while it was running; its answers are stale.
+  if (mine !== sweepToken) return { ok: false, error: 'superseded' };
+
+  lastSweep = { report, at: Date.now() };
+  return {
+    ok: true,
+    token: mine,
+    checked: report.checked,
+    wouldHide: report.wouldHide,
+    recovered: report.recovered,
+    uncertain: report.uncertain,
+    live: report.live,
+    // A first check of a list that has never been checked finds failures but
+    // hides nothing: nothing is on three strikes yet. Saying how many are close
+    // is the difference between a result that reads as "nothing wrong" and one
+    // that reads as "nothing wrong yet".
+    failing: report.results.filter((r) => r.counted).length,
+    nearing: report.results.filter((r) => r.counted && !r.wouldHide).length,
+    // The full list is kept for the preview; only what changed is worth putting
+    // on screen.
+    hiding: report.results.filter((r) => r.wouldHide).slice(0, 200),
+    failingList: report.results.filter((r) => r.counted && !r.wouldHide).slice(0, 200),
+    uncertainList: report.results.filter((r) => !r.ok && !r.counted).slice(0, 200),
+  };
+});
+
+ipcMain.handle('sweep:apply', (_e, { token } = {}) => {
+  if (!lastSweep || token !== sweepToken) {
+    return { ok: false, error: 'that check has already been superseded -- run it again' };
+  }
+  const { state, hidden } = sweepEngine.apply(lastSweep.report, readChannelHealth());
+  writeChannelHealth(state);
+  lastSweep = null;
+  return {
+    ok: true,
+    hidden: hidden.length,
+    grouped: channels.grouped(),
+    summary: channels.summary(),
+  };
+});
+
+ipcMain.handle('sweep:cancel', () => {
+  // Bumping the token orphans any run still going, so its result can never be
+  // applied after the viewer has changed their mind.
+  sweepToken += 1;
+  lastSweep = null;
+  return { ok: true };
 });
 
 ipcMain.handle('channel:hide', (_e, { url } = {}) => {

@@ -994,3 +994,278 @@ body::before {
 .tv-tile:focus-visible .tv-name {
   color: var(--text);
 }
+
+/* ===================== managing channels ===================== */
+
+/*
+ * The toolbar sits on one line with the genre strip rather than above it.
+ * On a television the strip is what you use, and pushing it down a row to make
+ * room for two buttons made the thing you came for harder to reach.
+ */
+.tv-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tv-genres {
+  flex: 1;
+  min-width: 0;
+}
+
+.tv-tools {
+  flex: none;
+  display: flex;
+  gap: 8px;
+}
+
+.tv-tools .btn.is-active {
+  background: rgba(255, 255, 255, 0.18);
+  color: var(--text);
+}
+
+/*
+ * The pencil only appears on a tile you are pointing at or have focused. A
+ * control on all 453 tiles is a wall of controls.
+ */
+.tv-pencil {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.62);
+  color: rgba(255, 255, 255, 0.9);
+  opacity: 0;
+  transition: opacity 0.15s var(--ease);
+  cursor: pointer;
+}
+
+.tv-tile {
+  position: relative;
+}
+
+.tv-tile:hover .tv-pencil,
+.tv-tile:focus-within .tv-pencil,
+.tv-pencil:focus-visible {
+  opacity: 1;
+}
+
+.tv-pencil:hover,
+.tv-pencil:focus-visible {
+  background: rgba(0, 0, 0, 0.82);
+  outline: 2px solid hsl(var(--glow-hue) 92% 62% / 0.9);
+  outline-offset: 1px;
+}
+
+.tv-pencil svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* A hand-added channel, marked so it can be told from the imported list. */
+.tv-tile.is-added .tv-face {
+  border-color: hsl(var(--glow-hue) 80% 62% / 0.55);
+}
+
+/* -------------------- the hidden ones -------------------- */
+
+.tv-hidden {
+  margin-top: 26px;
+  padding: 16px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.tv-hidden-note {
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.tv-hidden-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border-radius: 10px;
+}
+
+.tv-hidden-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.tv-face-small {
+  position: relative;
+  flex: none;
+  width: 56px;
+  height: 42px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.tv-face-small .tv-mark {
+  font-size: 16px;
+}
+
+.tv-hidden-text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.tv-hidden-text strong {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.tv-hidden-text span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* -------------------- the channel editor -------------------- */
+
+.field-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.field select {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font: 400 14px/1.2 system-ui, sans-serif;
+}
+
+.field select:focus {
+  outline: none;
+  border-color: hsl(var(--glow-hue) 92% 62% / 0.8);
+}
+
+.editor-error {
+  margin: 2px 0 0;
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: hsl(356 62% 46% / 0.16);
+  border: 1px solid hsl(356 62% 60% / 0.4);
+  color: #ffd7dc;
+  font-size: 12.5px;
+}
+
+.editor-error[hidden] {
+  display: none;
+}
+
+/* -------------------- checking channels -------------------- */
+
+.editor.sweep {
+  width: min(560px, 92vw);
+}
+
+.sweep-intro {
+  margin: -2px 0 4px;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.choice-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.choice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 11px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.choice:has(input:checked) {
+  border-color: hsl(var(--glow-hue) 92% 62% / 0.75);
+  background: hsl(var(--glow-hue) 92% 62% / 0.14);
+}
+
+.choice input {
+  accent-color: hsl(var(--glow-hue) 92% 62%);
+}
+
+.sweep-progress {
+  margin: 4px 0 0;
+  padding: 9px 11px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.sweep-progress[hidden] {
+  display: none;
+}
+
+.sweep-result {
+  margin: 4px 0 0;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  max-height: 44vh;
+  overflow-y: auto;
+}
+
+.sweep-result[hidden] {
+  display: none;
+}
+
+.sweep-counts {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sweep-subhead {
+  margin: 0 0 3px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.sweep-note {
+  margin: 0 0 7px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.sweep-list {
+  margin: 0 0 12px;
+  padding-left: 18px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text);
+}

@@ -109,11 +109,27 @@
         <!-- Live TV. A genre strip rather than every heading down the page:
              there are 27 genres, which is a lot of scrolling on a TV. -->
         <section class="tv" id="tv" hidden>
-          <div class="tv-genres" id="tv-genres" role="tablist" aria-label="Channel genres"></div>
+          <div class="tv-toolbar">
+            <div class="tv-genres" id="tv-genres" role="tablist" aria-label="Channel genres"></div>
+            <div class="tv-tools">
+              <button type="button" class="btn btn-small" id="tv-hidden-toggle" hidden></button>
+              <button type="button" class="btn btn-small" id="tv-sweep">Check channels&hellip;</button>
+              <button type="button" class="btn btn-small btn-primary" id="tv-add">Add channel</button>
+            </div>
+          </div>
           <p class="tv-summary" id="tv-summary" hidden></p>
           <div class="tv-grid" id="tv-grid"></div>
+          <div class="tv-hidden" id="tv-hidden" hidden>
+            <h2 class="row-label">Hidden channels</h2>
+            <p class="tv-hidden-note">
+              These stopped answering. None of them has been deleted, and putting one back
+              costs nothing.
+            </p>
+            <div class="tv-row" id="tv-hidden-row"></div>
+          </div>
           <p class="tv-empty" id="tv-empty" hidden>
-            No channels yet. Run <code>node scripts/import-channels.js</code> to add them.
+            No channels yet. Use <strong>Add channel</strong>, or run
+            <code>node scripts/import-channels.js</code>.
           </p>
         </section>
 
@@ -221,6 +237,102 @@
       <button id="picker-manage" class="picker-manage" hidden>Manage Profiles</button>
       <p id="picker-hint" class="picker-hint">Press Enter on a profile to continue</p>
     </div>
+
+    <!-- Adding and filing channels. Both write to the one list; neither can
+         reach a stream address that is not http(s). -->
+    <dialog id="channel-editor" class="editor">
+      <form method="dialog" id="channel-form">
+        <h2 id="channel-title">Add channel</h2>
+
+        <label class="field">
+          <span>Name</span>
+          <input id="channel-name" type="text" autocomplete="off" />
+        </label>
+
+        <label class="field">
+          <span>Stream link</span>
+          <input id="channel-url" type="text" autocomplete="off" placeholder="https://…/stream.m3u8" />
+          <small>An m3u8 address. Anything else will be refused.</small>
+        </label>
+
+        <label class="field">
+          <span>Genre</span>
+          <select id="channel-genre"></select>
+          <small id="channel-genre-hint">
+            New channels start in <strong>new channel</strong> until you file them somewhere better.
+          </small>
+        </label>
+
+        <div class="field-pair">
+          <label class="field">
+            <span>Country</span>
+            <input id="channel-country" type="text" maxlength="3" autocomplete="off" placeholder="GB" />
+          </label>
+          <label class="field">
+            <span>Resolution</span>
+            <input id="channel-res" type="text" autocomplete="off" placeholder="1920x1080" />
+          </label>
+        </div>
+
+        <p class="editor-error" id="channel-error" hidden></p>
+
+        <div class="editor-actions">
+          <button type="button" id="channel-remove" class="btn btn-danger">Remove</button>
+          <span class="spacer"></span>
+          <button type="button" id="channel-cancel" class="btn btn-ghost">Cancel</button>
+          <button type="submit" id="channel-save" class="btn btn-primary">Save</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Checking. Always two steps: look, then apply. -->
+    <dialog id="sweep-dialog" class="editor sweep">
+      <form method="dialog" id="sweep-form">
+        <h2>Check channels</h2>
+        <p class="sweep-intro">
+          Checks which channels still answer. Nothing is hidden until you have seen
+          the result and say so.
+        </p>
+
+        <div class="field">
+          <span>Which channels</span>
+          <div class="choice-row" id="sweep-which">
+            <label class="choice"><input type="radio" name="which" value="unchecked" checked />
+              <span>Never checked</span></label>
+            <label class="choice"><input type="radio" name="which" value="failed" />
+              <span>Failed before</span></label>
+            <label class="choice"><input type="radio" name="which" value="all" />
+              <span>Everything</span></label>
+          </div>
+          <small id="sweep-which-hint">Channels nobody has opened yet. These are the ones doing nothing for you.</small>
+        </div>
+
+        <div class="field">
+          <span>How thoroughly</span>
+          <div class="choice-row" id="sweep-depth">
+            <label class="choice"><input type="radio" name="depth" value="quick" checked />
+              <span>Quick</span></label>
+            <label class="choice"><input type="radio" name="depth" value="deep" />
+              <span>Deep</span></label>
+          </div>
+          <small id="sweep-depth-hint">Fetches each channel's playlist only. Catches dead hosts and missing streams.</small>
+        </div>
+
+        <p class="sweep-progress" id="sweep-progress" hidden></p>
+
+        <div class="sweep-result" id="sweep-result" hidden>
+          <p class="sweep-counts" id="sweep-counts"></p>
+          <div class="sweep-lists" id="sweep-lists"></div>
+        </div>
+
+        <div class="editor-actions">
+          <button type="button" id="sweep-start" class="btn">Check</button>
+          <span class="spacer"></span>
+          <button type="button" id="sweep-cancel" class="btn btn-ghost">Cancel</button>
+          <button type="submit" id="sweep-apply" class="btn btn-primary" hidden>Hide these</button>
+        </div>
+      </form>
+    </dialog>
 
     <dialog id="toast-dialog" class="editor"></dialog>
 

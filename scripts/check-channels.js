@@ -75,6 +75,7 @@ async function main() {
   let newlyDead = 0;
   let recovered = 0;
   let uncertain = 0;
+  let hardFailed = 0;
   const wouldHide = [];
 
   let cursor = 0;
@@ -94,6 +95,7 @@ async function main() {
         uncertain += 1;
         health[channel.url] = { fails: previous.fails || 0, at, reason };
       } else {
+        hardFailed += 1;
         const fails = (previous.fails || 0) + 1;
         const wasDead = previous.fails >= channels.FAILURES_BEFORE_DROP;
         health[channel.url] = { fails, at, reason };
@@ -128,7 +130,7 @@ async function main() {
   console.log('');
   console.log(`probed ${done} channels`);
   console.log(`live ${s.live} / hidden ${s.hidden} of ${s.total}`);
-  console.log(`newly hidden ${newlyDead}, recovered ${recovered}`);
+  console.log(`hard failures ${hardFailed}, newly hidden ${newlyDead}, recovered ${recovered}`);
   console.log(`could not be judged ${uncertain} (timed out, or blocked here — not counted)`);
   console.log(`written to ${healthPath}`);
   console.log('');
