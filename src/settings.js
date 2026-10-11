@@ -137,6 +137,18 @@ const DEFAULTS = {
    * giving up protection everywhere else.
    */
   blockingExceptions: [],
+
+  /* ------------------------------ theme ------------------------------ */
+
+  /**
+   * 'dark', 'light' or 'system'.
+   *
+   * Dark by default, because that is what the app has always been and nobody
+   * opens a television launcher in a sunlit room expecting white. 'system'
+   * follows the desktop, which is the setting people usually want once they have
+   * seen that it exists.
+   */
+  theme: 'dark',
 };
 
 /** How often the automatic check may run, in ms. `null` means never. */
@@ -197,6 +209,10 @@ function coerce(key, value) {
 
   if (key === 'subtitles') {
     return ['off', 'on', 'auto'].includes(value) ? value : fallback;
+  }
+
+  if (key === 'theme') {
+    return ['dark', 'light', 'system'].includes(value) ? value : fallback;
   }
 
   if (typeof fallback === 'string') return typeof value === 'string' ? value : fallback;

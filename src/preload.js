@@ -79,6 +79,10 @@ contextBridge.exposeInMainWorld('api', {
   debugLauncherVisible: () => ipcRenderer.invoke('debug:launcher-visible'),
   debugPlayerPickGenre: (genre) => ipcRenderer.invoke('debug:player-pick-genre', { genre }),
   debugPlayerInternals: () => ipcRenderer.invoke('debug:player-internals'),
+  // Synchronous on purpose. The theme has to be known before the first frame is
+  // painted; an async call resolves after the window has already shown the wrong
+  // colours, which is a white flash on every launch.
+  bootTheme: () => ipcRenderer.sendSync('settings:theme'),
   settings: () => ipcRenderer.invoke('settings:get'),
   setSettings: (changes) => ipcRenderer.invoke('settings:set', changes),
   resetSettings: () => ipcRenderer.invoke('settings:reset'),

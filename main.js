@@ -1034,6 +1034,10 @@ if (process.env.TVL_DEBUG_INPUT === '1') {
 
   ipcMain.handle('debug:player-internals', async () => player.internals());
 
+  ipcMain.on('settings:theme', (event) => {
+    event.returnValue = settingsCache.theme;
+  });
+
   ipcMain.handle('settings:get', () => ({
     settings: settings.all(),
     defaults: settings.DEFAULTS,

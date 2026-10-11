@@ -572,6 +572,10 @@ el.settingsHidden.addEventListener('click', () => {
   setTimeout(() => el.tvHiddenToggle.click(), 900);
 });
 
+// The painted selects. Built before anything can be clicked, because a native
+// one that opens is a system-drawn popup no stylesheet can reach.
+if (typeof window.mountSelects === 'function') window.mountSelects();
+
 /* ------------------------------ tabs --------------------------------- */
 
 function setTab(next) {

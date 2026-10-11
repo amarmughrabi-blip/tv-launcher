@@ -175,10 +175,23 @@ test('no exceptions means nothing is exempt', () => {
   assert.strictEqual(settings.isExempt('example.com'), false);
 });
 
+test('the theme is one of the three, and a typo does not blank the screen', () => {
+  // A bad value here would resolve to an undefined data-theme, and every
+  // `data-theme='light'` rule would simply not apply -- which is the same as
+  // having no theme setting at all.
+  for (const value of ['dark', 'light', 'system']) {
+    assert.strictEqual(settings.set({ theme: value }).theme, value);
+  }
+  for (const junk of ['sepia', '', null, 42, undefined]) {
+    assert.strictEqual(settings.set({ theme: junk }).theme, 'dark', `accepted ${JSON.stringify(junk)}`);
+  }
+});
+
 test('reset puts everything back', () => {
   settings.set({ adBlocking: false, deadDays: 2, region: ['GB'] });
   settings.reset();
   assert.strictEqual(settings.get('adBlocking'), true);
   assert.strictEqual(settings.get('deadDays'), 7);
   assert.deepStrictEqual(settings.get('region'), []);
+  assert.strictEqual(settings.get('theme'), 'dark');
 });

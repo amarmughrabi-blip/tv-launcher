@@ -185,6 +185,7 @@ function mountSettings({ api, toast, onChannelChange }) {
     el('set-subtitle-size-out').textContent = `${v.subtitleSize}px`;
     el('set-blocking').checked = Boolean(v.adBlocking);
     el('set-cosmetics').checked = Boolean(v.hideInPageAds);
+    el('set-theme').value = v.theme || 'dark';
 
     paintGenres();
     paintRegion();
@@ -256,6 +257,13 @@ function mountSettings({ api, toast, onChannelChange }) {
       el('set-subtitle-size-out').textContent = `${e.target.value}px`;
     });
     el('set-subtitle-size').addEventListener('change', (e) => save({ subtitleSize: Number(e.target.value) }));
+
+    el('set-theme').addEventListener('change', (e) => {
+      // Applied here as well as saved, because a theme that only changes on the
+      // next launch is a theme setting nobody believes.
+      window.launcherTheme.apply(e.target.value);
+      save({ theme: e.target.value });
+    });
 
     el('set-blocking').addEventListener('change', (e) => save({ adBlocking: e.target.checked }));
     el('set-cosmetics').addEventListener('change', (e) => save({ hideInPageAds: e.target.checked }));
