@@ -67,6 +67,7 @@ contextBridge.exposeInMainWorld('api', {
   debugSiteEval: (code) => ipcRenderer.invoke('debug:site-eval', { code }),
   debugExternalOpens: () => ipcRenderer.invoke('debug:external-opens'),
   debugWindows: () => ipcRenderer.invoke('debug:windows'),
+  debugExempt: (host) => ipcRenderer.invoke('debug:exempt', { host }),
   debugBlocker: () => ipcRenderer.invoke('debug:blocker'),
   debugRealClick: (x, y) => ipcRenderer.invoke('debug:real-click', { x, y }),
   debugPlayer: () => ipcRenderer.invoke('debug:player'),

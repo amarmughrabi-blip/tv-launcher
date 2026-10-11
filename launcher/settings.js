@@ -47,6 +47,15 @@ function mountSettings({ api, toast, onChannelChange }) {
   const dialog = el('settings-dialog');
   const state = { values: {}, defaults: {}, genres: [] };
 
+  /**
+   * Counts saves, so a slow one knows it has been overtaken.
+   *
+   * Without it, toggling two chips quickly repaints the screen from the first
+   * reply and the second chip visibly springs back -- while the setting behind it
+   * did save. A form that lies about what is stored is worse than one that lags.
+   */
+  let saveToken = 0;
+
   /* ------------------------------ saving ------------------------------ */
 
   /**
@@ -57,10 +66,20 @@ function mountSettings({ api, toast, onChannelChange }) {
    * leave the field showing 900 while the app was using 72.
    */
   async function save(changes) {
+    saveToken += 1;
+    const mine = saveToken;
     const result = await api.setSettings(changes);
     if (result && result.settings) {
       state.values = result.settings;
-      paint();
+      // Only repaint if this is still the newest answer.
+      //
+      // Every control saves as it is touched, so two saves are routinely in
+      // flight at once. Main merges them and returns the whole stored set each
+      // time, so the earlier response carries a value for the field the user has
+      // since changed -- and painting it would put the form back the way it was,
+      // over a setting that was in fact saved. The screen would then show one
+      // thing and the app would do another, which is the worst outcome available.
+      if (saveToken === mine) paint();
     }
     return result;
   }

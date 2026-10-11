@@ -903,6 +903,13 @@ if (process.env.TVL_DEBUG_INPUT === '1') {
     key: cosmeticsKey,
   }));
 
+  // Asks the blocker directly. Counting exemptions needs a request to have
+  // happened, and a check that opens no page would see zero for a setting that
+  // is working perfectly -- so the answer has to come from the same place the
+  // request pipeline would ask it.
+  ipcMain.handle('debug:exempt', (_e, { host } = {}) =>
+    blocker ? Boolean(blocker.isExempt(host)) : false);
+
   ipcMain.handle('debug:blocker', () => (blocker ? blocker.summary : null));
 
   // sendInputEvent produces a trusted event with user activation, which is what
