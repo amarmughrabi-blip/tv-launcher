@@ -32,13 +32,22 @@ const CONTROLS_SCRIPT = `(() => {
 
   const HOST_ID = '__tvl-controls-host';
   let host = null;
+  // What the user asked for, and whether the page has gone fullscreen. The two
+  // are kept apart so leaving fullscreen restores the choice rather than
+  // resetting it.
   let expanded = false;
+  let fullscreen = false;
 
   const emit = (action) => {
     try {
       document.dispatchEvent(new CustomEvent('tvl-control', { detail: { action } }));
     } catch (e) {}
   };
+
+  const isFullscreen = () => Boolean(
+    document.fullscreenElement || document.webkitFullscreenElement ||
+    document.msFullscreenElement,
+  );
 
   const ICON_BACK = '<svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>';
   const ICON_WINDOW =
@@ -118,12 +127,51 @@ const CONTROLS_SCRIPT = `(() => {
     \`;
 
     const q = (id) => root.getElementById(id);
-    q('t').addEventListener('click', (e) => { e.stopPropagation(); emit('toggle'); });
+    // Handled here rather than in the main process so the click lands on the
+    // same tick, with no round trip for the window to argue with.
+    q('t').addEventListener('click', (e) => {
+      e.stopPropagation();
+      emit('toggle');
+      if (window.__tvlToggleControls) window.__tvlToggleControls();
+    });
     q('b').addEventListener('click', (e) => { e.stopPropagation(); emit('back'); });
     q('w').addEventListener('click', (e) => { e.stopPropagation(); emit('brave'); });
-    // A click anywhere else on the page means the user is done with the pair.
-    root.addEventListener('focusout', () => {});
     return host;
+  };
+
+  /**
+   * Put the controls on screen, if they belong there.
+   *
+   * Visibility is decided here and nowhere else. The pointer used to expand
+   * them on a timer, which meant they opened and closed on their own and the
+   * deliberate click had to fight the auto-hide to stick.
+   */
+  const apply = () => {
+    if (!host || !host.isConnected || !host.shadowRoot) return;
+    const pill = host.shadowRoot.querySelector('.pill');
+    if (!pill) return;
+
+    // Fullscreen is for the video, not for us: anything drawn over it is the
+    // first thing to ruin it.
+    host.style.setProperty('display', fullscreen ? 'none' : 'block', 'important');
+    if (fullscreen) return;
+
+    const shown = Boolean(expanded);
+    pill.setAttribute('data-expanded', shown ? 'true' : 'false');
+    const toggle = host.shadowRoot.getElementById('t');
+    if (toggle) {
+      toggle.innerHTML = shown ? ICON_UP : ICON_DOWN;
+      toggle.title = shown ? 'Hide controls' : 'Show controls';
+      toggle.setAttribute('aria-label', toggle.title);
+      toggle.setAttribute('aria-expanded', shown ? 'true' : 'false');
+    }
+  };
+
+  const setExpanded = (open) => {
+    expanded = Boolean(open);
+    window.__tvlControlsState = expanded;
+    apply();
+    return expanded;
   };
 
   const attach = () => {
@@ -141,20 +189,27 @@ const CONTROLS_SCRIPT = `(() => {
     }).observe(document.documentElement, { childList: true, subtree: true });
   } catch (e) {}
 
-  window.__tvlSetControls = (open) => {
-    expanded = Boolean(open);
-    const pill = host && host.shadowRoot && host.shadowRoot.querySelector('.pill');
-    if (!pill) return;
-    pill.setAttribute('data-expanded', expanded ? 'true' : 'false');
-    const toggle = host.shadowRoot.getElementById('t');
-    if (toggle) {
-      toggle.innerHTML = expanded ? ICON_UP : ICON_DOWN;
-      toggle.title = expanded ? 'Hide controls' : 'Show controls';
-      toggle.setAttribute('aria-label', toggle.title);
-      toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
-    }
+  window.__tvlSetControls = setExpanded;
+
+  // Main tells us when the window itself has gone fullscreen; the events below
+  // cover the page-level API the site uses.
+  window.__tvlFullscreen = (on) => {
+    fullscreen = Boolean(on);
+    apply();
   };
 
+  for (const type of ['fullscreenchange', 'webkitfullscreenchange', 'MSFullscreenChange']) {
+    try {
+      document.addEventListener(type, () => {
+        fullscreen = isFullscreen();
+        apply();
+      });
+    } catch (e) {}
+  }
+
+  window.__tvlToggleControls = () => setExpanded(!expanded);
+
+  apply();
   window.__tvlControlsState = expanded;
   try {
     Object.defineProperty(window, '__tvlControlsInstalled', { value: true, configurable: true });

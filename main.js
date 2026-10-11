@@ -123,19 +123,6 @@ function chromeInset() {
   return 0;
 }
 
-/**
- * Tell the injected controls whether to show the pair.
- *
- * Driven from here rather than from the page, so the auto-hide and the manual
- * toggle cannot disagree: there is one state and both paths write to it.
- */
-function pushControlsState() {
-  if (!siteView || siteView.webContents.isDestroyed()) return;
-  siteView.webContents
-    .executeJavaScript(`window.__tvlSetControls && window.__tvlSetControls(${Boolean(chromeVisible)})`)
-    .catch(() => {});
-}
-
 function showChrome({ schedule = true } = {}) {
   // The controls are their own window now, so revealing means expanding them.
   if (chromeVisible) {
@@ -143,14 +130,12 @@ function showChrome({ schedule = true } = {}) {
     // without re-applying left the bar off-screen while main believed it was
     // visible.
     trackViewBounds();
-    pushControlsState();
     if (schedule) scheduleHideChrome();
     return;
   }
   chromeVisible = true;
   sendToLauncher('chrome:visible', true);
   trackViewBounds();
-  pushControlsState();
   cancelHideChrome();
   if (schedule) scheduleHideChrome();
 }
@@ -160,7 +145,6 @@ function hideChrome() {
   chromeVisible = false;
   sendToLauncher('chrome:visible', false);
   trackViewBounds();
-  pushControlsState();
 }
 
 /**
@@ -356,6 +340,18 @@ function openSite(url) {
     }
   });
 
+  // Fullscreen is for the video. The page also watches the Fullscreen API, but
+  // a player that goes fullscreen at the window level never fires those events,
+  // and controls sitting over the video are the first thing to spoil it.
+  const setFullscreen = (on) => {
+    if (siteView !== view || view.webContents.isDestroyed()) return;
+    view.webContents
+      .executeJavaScript(`window.__tvlFullscreen && window.__tvlFullscreen(${Boolean(on)})`)
+      .catch(() => {});
+  };
+  view.webContents.on('enter-html-full-screen', () => setFullscreen(true));
+  view.webContents.on('leave-html-full-screen', () => setFullscreen(false));
+
   // A remote control's back button arrives as Escape or Backspace, and the
   // launcher page is not focused while a site is, so catch it here.
   view.webContents.on('before-input-event', (event, input) => {
@@ -389,7 +385,6 @@ function openSite(url) {
     // have to go in again for every document.
     try {
       await view.webContents.executeJavaScript(CONTROLS_SCRIPT);
-      pushControlsState();
     } catch (err) {
       log(`site controls not installed: ${err.message}`);
     }
@@ -529,18 +524,9 @@ ipcMain.on('site:control', (_e, { action } = {}) => {
     if (current) brave.open(current, { dataRoot: paths.appDir(), log });
     return;
   }
-  if (action === 'toggle') {
-    if (chromeVisible) {
-      cancelHideChrome();
-      chromeVisible = false;
-      sendToLauncher('chrome:visible', false);
-      trackViewBounds();
-      pushControlsState();
-    } else {
-      // Held open: auto-hide would take it away again immediately.
-      showChrome({ schedule: false });
-    }
-  }
+  // 'toggle' is handled in the page itself, on the click's own tick. Routing it
+  // through here meant it had to be re-asserted against the auto-hide, which is
+  // why the controls used to open and close on their own.
 });
 
 ipcMain.handle('site:open', (_e, { url }) => openSite(url));

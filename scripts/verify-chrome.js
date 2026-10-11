@@ -66,50 +66,14 @@ async function ensureSites() {
     out.push(`ok   bar auto-hid after ${Math.round(elapsed)}ms (loaded machine)`);
   }
 
-  // Past the auto-hide delay it should be gone. Bounded, not a fixed sleep.
-  let hidBy = hidden() ? Math.round(elapsed) : 0;
-  for (let i = 0; i < 40 && !hidBy; i += 1) {
-    await wait(150);
-    if (hidden()) hidBy = Math.round(performance.now() - openedAt);
-  }
-  if (!hidBy) {
-    const state = await bridge.debugChromeState().catch((e) => ({ err: e.message }));
-    return fail(`bar did not auto-hide over the site (state ${JSON.stringify(state)})`);
-  }
-  if (hidBy < AUTO_HIDE_MS) {
-    return fail(`bar auto-hid after ${hidBy}ms, sooner than the ${AUTO_HIDE_MS}ms delay`);
-  }
-  out.push(`ok   bar auto-hides over a site (after ${hidBy}ms)`);
-
   const view = await window.api.currentSite();
   if (!view) return fail('no site view open');
   out.push(`ok   site open at ${view.url}`);
 
-  // --- the reveal band must be a band, not the top half of the screen --------
-  // Reported from a wide reveal zone, the bar came back while the pointer was
-  // still well down the screen, which reads as it appearing at random.
-  const tooLow = await bridge.debugMouseMove(120);
-  if (!tooLow.ok) return fail('could not place the cursor below the reveal band');
-  await wait(500);
-  if (!hidden()) {
-    return fail('the bar revealed with the pointer 120px down, well short of the top');
-  }
-  out.push('ok   pointer below the top does not reveal the bar');
-
-  // --- moving the pointer near the top brings it back ------------------------
-  const revealed = await bridge.debugMouseMove(10);
-  if (!revealed.ok) return fail('could not place the cursor near the top');
-  await wait(700);
-  const afterMove = await bridge.debugChromeState().catch(() => null);
-  if (hidden()) {
-    return fail(`pointer near the top did not restore the bar (state ${JSON.stringify(afterMove)})`);
-  }
-  out.push('ok   bar returns when the pointer nears the top');
-
-  // The controls live in the page, not in this window, so they have to be
-  // inspected there. Asserting geometry in the launcher proved nothing: an
-  // earlier version placed them perfectly and the site view painted straight
-  // over the top, and every check here still passed.
+  // --- the controls must not move unless they are clicked -------------------
+  // They used to be driven by a pointer timer in the main process, so they
+  // opened and closed on their own and a deliberate click had to be re-asserted
+  // against the auto-hide to stick. Visibility now belongs to the page alone.
   const readControls = () =>
     bridge.debugSiteEval(`(() => {
       const host = document.getElementById('__tvl-controls-host');
@@ -119,44 +83,74 @@ async function ensureSites() {
       const r = host.getBoundingClientRect();
       const back = sr.getElementById('b').getBoundingClientRect();
       const brave = sr.getElementById('w').getBoundingClientRect();
-      const cs = getComputedStyle(host);
       return JSON.stringify({
         installed: true,
         expanded: pill.getAttribute('data-expanded'),
         w: Math.round(r.width), h: Math.round(r.height),
         left: Math.round(r.left), top: Math.round(r.top), right: Math.round(r.right),
+        hidden: host.style.display === 'none',
         backW: Math.round(back.width), braveW: Math.round(brave.width),
-        position: cs.position, z: cs.zIndex,
-        toggle: sr.getElementById('t').getAttribute('aria-label'),
       });
     })()`).then((raw) => JSON.parse(raw));
 
+  const toggle = () =>
+    bridge.debugSiteEval(
+      `document.getElementById('__tvl-controls-host').shadowRoot.getElementById('t').click(); 'clicked'`,
+    );
+
+  const start = await readControls();
+  if (!start.installed) return fail('the controls were never injected into the page');
+  if (start.expanded !== 'false') {
+    return fail(`the controls started expanded (state=${start.expanded}) — they should wait to be asked for`);
+  }
+  out.push('ok   controls start collapsed');
+
+  // Nothing may expand them: not the pointer, and not the passage of time.
+  await bridge.debugMouseMove(8);
+  await wait(1800);
+  const afterHover = await readControls();
+  if (afterHover.expanded !== 'false') {
+    return fail(`the pointer opened the controls on its own (state=${afterHover.expanded})`);
+  }
+  out.push('ok   nothing opens them but the toggle');
+
+  // --- the toggle opens them -------------------------------------------------
+  await toggle();
+  await wait(500);
   const controls = await readControls();
-  if (!controls.installed) return fail('the controls were never injected into the page');
-  if (!afterMove || afterMove.chromeOffset !== 0) {
-    return fail(`revealing the controls did not take effect (${JSON.stringify(afterMove)})`);
-  }
-
-  // The whole point: the page keeps its space. The controls float above it.
-  if (afterMove.viewTop !== 0) {
-    return fail(`the site is inset by ${afterMove.viewTop}px — it should never be pushed down`);
-  }
-
-  // Fixed and above everything, or the site paints over it.
-  if (controls.position !== 'fixed') return fail(`the controls are ${controls.position}, not fixed`);
-  if (Number(controls.z) < 2000000) return fail(`the controls have z-index ${controls.z}, too low to sit above the site`);
-
-  // Revealed state: the pair is showing and reachable.
   if (controls.expanded !== 'true') {
-    return fail(`the controls did not expand on reveal (state=${controls.expanded})`);
+    return fail(`the toggle did not expand the controls (state=${controls.expanded})`);
   }
-  if (!(controls.backW > 20) || !(controls.braveW > 10)) {
-    return fail(`the pair is not shown (Back ${controls.backW}px, Brave ${controls.braveW}px)`);
+  if (!(controls.backW > 0 && controls.braveW > 0)) {
+    return fail('the controls expanded but Back and Open in Brave are not there');
   }
-  if (!(controls.top >= 0 && controls.top < 60)) {
-    return fail(`the controls are not near the top (top=${controls.top}px)`);
+  out.push('ok   the toggle shows Back and Open in Brave');
+
+  // And they must stay put. This is the regression: an auto-hide took them away
+  // again seconds later, which is the "it opens and closes by itself" report.
+  await wait(2500);
+  const stillOpen = await readControls();
+  if (stillOpen.expanded !== 'true') {
+    return fail(`the controls closed themselves after ${2500}ms (state=${stillOpen.expanded})`);
   }
-  out.push('ok   Back and Open in Brave are shown above the page after reveal');
+  out.push('ok   they stay open until told otherwise');
+
+  // --- fullscreen is for the video ------------------------------------------
+  await bridge.debugSiteEval('window.__tvlFullscreen(true); "fs"');
+  await wait(400);
+  const fs = await readControls();
+  if (!fs.hidden || fs.w !== 0) {
+    return fail(`the controls are still drawn over fullscreen (${fs.w}px wide)`);
+  }
+  out.push('ok   fullscreen hides them');
+
+  await bridge.debugSiteEval('window.__tvlFullscreen(false); "fs"');
+  await wait(400);
+  const back = await readControls();
+  if (back.hidden || back.expanded !== 'true') {
+    return fail(`leaving fullscreen did not restore the controls (hidden=${back.hidden}, state=${back.expanded})`);
+  }
+  out.push('ok   leaving fullscreen restores them');
 
   // Top right, as asked, and a small fraction of the window.
   if (controls.right < window.innerWidth * 0.5) {
@@ -224,22 +218,6 @@ async function ensureSites() {
   }
   out.push('ok   no bar control overflows the bar');
 
-  // And it must hide again once the pointer moves away from the top. Bounded
-  // rather than tied to the idle constant, since the countdown starts when the
-  // bar was revealed, not when the pointer left.
-  await bridge.debugMouseMove(400);
-  if (hidden()) return fail('bar vanished the instant the pointer left the top');
-  let rehid = false;
-  for (let i = 0; i < 40; i += 1) {
-    await wait(150);
-    if (hidden()) {
-      rehid = true;
-      break;
-    }
-  }
-  if (!rehid) return fail('bar did not hide again after the pointer moved away');
-  out.push('ok   bar hides again when the pointer moves away');
-
   // --- the preload must actually report from a real page --------------------
   if (typeof bridge.debugProbePointer !== 'function') {
     return fail('debug pointer probe missing — run with TVL_DEBUG_INPUT=1');
@@ -254,30 +232,6 @@ async function ensureSites() {
     return fail(`preload reported ${probe.lastPointerY}px, expected the 200px it was given`);
   }
   out.push(`ok   site preload reports pointer height (${probe.lastPointerY}px)`);
-
-  // A real pointer at the top reveals the bar; the same pointer further down
-  // must not. Both go through the page's own DOM, not the debug shortcut.
-  await bridge.debugProbePointer(8);
-  await wait(400);
-  if (hidden()) return fail('a real pointer at the top did not reveal the bar');
-  out.push('ok   a real pointer move reveals the bar');
-
-  for (let i = 0; i < 30 && !hidden(); i += 1) await wait(150);
-  if (!hidden()) return fail('the bar did not hide before the mid-page probe');
-  await bridge.debugProbePointer(140);
-  await wait(400);
-  if (!hidden()) return fail('a real pointer at 140px revealed the bar');
-  out.push('ok   a real pointer lower down leaves the bar hidden');
-
-  // Scrolling the page must not bring the bar back. It used to report the top
-  // on any scroll, so the bar appeared with the pointer nowhere near it.
-  await bridge.debugMouseMove(400);
-  for (let i = 0; i < 30 && !hidden(); i += 1) await wait(150);
-  if (!hidden()) return fail('the bar did not hide before the scroll probe');
-  await bridge.debugProbePointer(0, { scroll: true });
-  await wait(500);
-  if (!hidden()) return fail('scrolling the page revealed the bar');
-  out.push('ok   scrolling does not reveal the bar');
 
   // --- an icon can be changed through the file input -------------------------
   let editorTile = document.querySelector('.tile');
