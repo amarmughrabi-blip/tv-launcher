@@ -348,3 +348,42 @@ video {
   font-size: 11px;
   color: #7d8798;
 }
+
+/* ---------------- when a channel is not playing ---------------- */
+
+.problem {
+  background: rgba(8, 10, 14, 0.94);
+  backdrop-filter: blur(10px);
+}
+
+.problem-counted {
+  margin: 2px 0 0;
+  color: #9aa4b6;
+  font-size: 12.5px;
+}
+
+.problem-counted[hidden] {
+  display: none;
+}
+
+.problem-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.pbtn {
+  padding: 9px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #eef1f7;
+  font: 500 13.5px/1 system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.pbtn:hover,
+.pbtn:focus-visible {
+  background: rgba(255, 255, 255, 0.16);
+  outline: none;
+}

@@ -24,8 +24,16 @@
 /** How many consecutive failed probes before a channel stops being offered. */
 const FAILURES_BEFORE_DROP = 3;
 
+/**
+ * How stale a healthy channel's timestamp may get. Long enough that a stream
+ * stalling every few minutes does not rewrite the file, short enough that a
+ * weekly sweep still sees it as recently checked.
+ */
+const SIX_HOURS = 6 * 60 * 60 * 1000;
+
 const fs = require('node:fs');
 const { paths } = require('./paths');
+const { shouldCount } = require('./channel-health');
 
 const GENRES = [
   'news', 'sports', 'movies', 'series', 'entertainment', 'kids', 'family',
@@ -112,6 +120,72 @@ function all() {
   return out;
 }
 
+/**
+ * Record what happened when a channel was played, and say whether that moved it
+ * closer to being hidden.
+ *
+ * Only hard failures count. A timeout or a geo-block says more about this
+ * machine than about the channel, and counting them would hide channels that
+ * work fine for someone else. A clean play resets the run.
+ *
+ * Returns the stored record so the caller can tell the viewer what happened.
+ */
+function recordResult(url, { ok, reason = null }) {
+  const state = readJson(paths.channelHealthFile(), {});
+  const previous = state[url] || { fails: 0 };
+  const at = new Date().toISOString();
+
+  // A live stream fires `playing` again after every stall, and each one would
+  // otherwise rewrite the file for no change at all. The timestamp still moves,
+  // but only every few hours, which is often enough to count as "checked".
+  const settled = previous.fails === 0 && !previous.reason;
+  if (ok && settled && previous.at && Date.now() - Date.parse(previous.at) < SIX_HOURS) {
+    return { counted: false, reason: null, fails: 0, hidden: false };
+  }
+
+  if (!ok && !shouldCount(reason)) {
+    // Soft: remembered so the UI can explain it, but the counter does not move.
+    state[url] = { fails: previous.fails || 0, at, reason };
+    writeHealth(state);
+    return { counted: false, reason };
+  }
+
+  const fails = ok ? 0 : (previous.fails || 0) + 1;
+  state[url] = { fails, at, reason: ok ? null : reason };
+  writeHealth(state);
+
+  return {
+    counted: !ok,
+    reason: ok ? null : reason,
+    fails,
+    hidden: fails >= FAILURES_BEFORE_DROP,
+  };
+}
+
+function writeHealth(state) {
+  fs.mkdirSync(paths.appDir(), { recursive: true });
+  fs.writeFileSync(paths.channelHealthFile(), `${JSON.stringify(state, null, 1)}\n`);
+}
+
+/** Drop any record for a channel, so it starts counting from nothing. */
+function forget(url) {
+  const state = readJson(paths.channelHealthFile(), {});
+  delete state[url];
+  writeHealth(state);
+}
+
+/** Bring a hidden channel back by hand. */
+function restore(url) {
+  forget(url);
+}
+
+/** Hide a channel now, without waiting for the counter. */
+function hide(url) {
+  const state = readJson(paths.channelHealthFile(), {});
+  state[url] = { fails: FAILURES_BEFORE_DROP, at: new Date().toISOString(), reason: 'hidden by hand' };
+  writeHealth(state);
+}
+
 /** Channels that are not currently hidden, in stable display order. */
 function available() {
   return all().filter((c) => !c.dead);
@@ -189,6 +263,10 @@ module.exports = {
   summary,
   findByUrl,
   writeAll,
+  recordResult,
+  forget,
+  restore,
+  hide,
   usableUrl,
   normalise,
   FAILURES_BEFORE_DROP,

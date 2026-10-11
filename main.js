@@ -22,6 +22,8 @@ const { app, BrowserWindow, WebContentsView, ipcMain, protocol, net, shell, webC
 const { GUARD: POPUNDER_GUARD } = require('./src/popunder-guard');
 const { CONTROLS_SCRIPT } = require('./src/site-controls');
 const channels = require('./src/channels');
+const probe = require('./src/channel-probe');
+const { explain } = require('./src/channel-health');
 const player = require('./src/player');
 const store = require('./src/store');
 const icons = require('./src/icons');
@@ -601,6 +603,62 @@ function playerWindowRef() {
   return all.find((w) => w !== mainWindow && !w.isDestroyed()) || null;
 }
 
+/**
+ * A channel failed to play. Work out why, tell the viewer, and only count it if
+ * the stream is genuinely gone.
+ *
+ * The page only knows "network error", which cannot distinguish a missing host
+ * from a timeout, and only the first means the channel is dead.
+ */
+async function diagnoseChannel(url) {
+  const result = await probe.probe(url);
+  const reason = probe.classify(result);
+  return { ok: result.ok, reason };
+}
+
+ipcMain.on('player:failed', (_e, { url } = {}) => {
+  if (!url) return;
+  const channel = channels.findByUrl(url);
+  if (!channel) return;
+
+  diagnoseChannel(channel.url).then(({ ok, reason }) => {
+    const outcome = channels.recordResult(channel.url, { ok, reason });
+    log(`${channel.name}: ${reason} (${outcome.counted ? 'counted' : 'ignored'})`);
+
+    // The player shows the sentence, not the reason code.
+    if (player.isOpen()) {
+      player.explain(channel.url, {
+        reason,
+        counted: outcome.counted,
+        fails: outcome.fails || 0,
+        hidden: Boolean(outcome.hidden),
+        message: explain(reason),
+      });
+    }
+  });
+});
+
+ipcMain.on('player:playing', (_e, { url } = {}) => {
+  // A channel that plays clears its run, so a channel is never hidden for
+  // failures that were followed by a good one.
+  if (url) channels.recordResult(url, { ok: true });
+});
+
+ipcMain.handle('channel:hide', (_e, { url } = {}) => {
+  if (!url) return { ok: false };
+  channels.hide(url);
+  return { ok: true, summary: channels.summary() };
+});
+
+ipcMain.handle('channel:restore', (_e, { url } = {}) => {
+  if (!url) return { ok: false };
+  channels.restore(url);
+  return { ok: true, summary: channels.summary() };
+});
+
+// `on`, not `handle`: the page uses ipcRenderer.send, which never reaches an
+// invoke handler. Getting this wrong fails silently -- the page reports itself
+// ready, nothing arrives, and the queued channel simply never plays.
 ipcMain.on('player:report', (_e, payload) => {
   if (!payload) return;
   // The page announcing itself is what releases the queued channel: a message
@@ -761,8 +819,35 @@ if (process.env.TVL_DEBUG_INPUT === '1') {
         current: (channelsSlide.querySelector('.ch.is-current')||{}).textContent || null,
         idle: document.getElementById('chrome').classList.contains('is-idle'),
         cursorHidden: getComputedStyle(document.body).cursor === 'none',
+        problemShown: !document.getElementById('problem').hidden,
+        problemTitle: document.getElementById('problem-title').textContent,
+        problemDetail: document.getElementById('problem-detail').textContent,
+        problemCounted: document.getElementById('problem-counted').hidden
+          ? null : document.getElementById('problem-counted').textContent,
+        hideButtonShown: !document.getElementById('problem-hide').hidden,
+        state: window.__player ? {
+          currentUrl: window.__player.currentUrl,
+          loadCount: window.__player.loadCount,
+          lastError: window.__player.lastError,
+          listCount: window.__player.listCount,
+          fatalSeen: window.__player.fatalSeen,
+          reported: window.__player.reported,
+          bridgeError: window.__player.bridgeError,
+        } : 'no player state',
       });
     })()`).catch((e) => ({ open: true, err: e.message }));
+  });
+
+  ipcMain.handle('debug:player-internals', async () => player.internals());
+
+  ipcMain.handle('debug:health', async () => {
+    const list = channels.all();
+    return {
+      summary: channels.summary(),
+      records: list
+        .filter((c) => c.fails > 0 || c.checked)
+        .map((c) => ({ name: c.name, fails: c.fails, dead: c.dead, checked: c.checked })),
+    };
   });
 
   ipcMain.handle('debug:player-pick', async (_e, { index } = {}) => {

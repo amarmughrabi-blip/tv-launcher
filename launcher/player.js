@@ -33,6 +33,9 @@ const slideGenres = document.getElementById('slide-genres');
 const slideChannels = document.getElementById('slide-channels');
 const slideTitle = document.getElementById('slide-title');
 const slideBack = document.getElementById('slide-back');
+const problemCounted = document.getElementById('problem-counted');
+const problemRetry = document.getElementById('problem-retry');
+const problemHide = document.getElementById('problem-hide');
 
 /** How long the chrome waits before getting out of the way. */
 const IDLE_MS = 4000;
@@ -44,16 +47,73 @@ let idleTimer = null;
 let currentUrl = null;
 let grouped = [];
 let view = 'genres';
+let loadCount = 0;
+let lastError = null;
+let fatalSeen = null;
 let currentGenre = 'all';
+
+let lastFailed = null;
 
 function showProblem(title, detail) {
   problemTitle.textContent = title;
-  problemDetail.textContent = detail || '';
+  problemDetail.textContent = detail || 'Checking…';
   problem.hidden = false;
 }
 
+/**
+ * Replace the vague error with what actually went wrong, and say whether it was
+ * counted. A geo-block that silently hid the channel would be the worst outcome,
+ * so the viewer is told when a failure was ignored.
+ */
+function showDiagnosis({ reason, counted, fails, hidden, message }) {
+  lastFailed = currentUrl;
+  problemDetail.textContent = message || 'Something went wrong with this stream.';
+
+  if (counted) {
+    problemCounted.textContent = hidden
+      ? 'It has failed enough times that it is now hidden from the grid.'
+      : `Failure ${fails} of 3 before it is hidden.`;
+    problemCounted.hidden = false;
+  } else if (reason) {
+    problemCounted.textContent = 'Not counted — this may be temporary, or blocked where you are.';
+    problemCounted.hidden = false;
+  } else {
+    problemCounted.hidden = true;
+  }
+
+  // Only worth offering to hide something that is genuinely broken.
+  problemHide.hidden = !counted;
+  problem.hidden = false;
+  wake();
+}
+
+problemRetry.addEventListener('click', () => {
+  if (lastFailed) window.player.retry(lastFailed);
+  wake();
+});
+
+problemHide.addEventListener('click', async () => {
+  if (!lastFailed) return;
+  const row = document.querySelector(`.ch[data-url="${cssEscape(lastFailed)}"]`);
+  if (row) row.remove();
+  await window.player.hideChannel(lastFailed);
+  problemHide.disabled = true;
+  problemCounted.hidden = false;
+  problemCounted.textContent = 'Hidden. It will not be offered again.';
+  wake();
+});
+
+/**
+ * Clear the error panel completely.
+ *
+ * The verdict line has to go with it. Left in place, the next channel's panel
+ * would carry the previous one's verdict until its own answer arrived -- which
+ * reads as "this channel failed once" for a channel that has not failed at all.
+ */
 function clearProblem() {
   problem.hidden = true;
+  problemCounted.hidden = true;
+  problemHide.hidden = true;
 }
 
 function destroyHls() {
@@ -77,8 +137,12 @@ const FATAL = new Set([
 
 function load(payload) {
   const token = ++loadToken;
+  loadCount += 1;
   clearProblem();
   destroyHls();
+  // The error panel talks about a specific channel; a switch invalidates it.
+  lastFailed = null;
+  if (problemHide) problemHide.disabled = false;
 
   const { url, source, name, res } = payload || {};
   if (!url) {
@@ -110,8 +174,16 @@ function load(payload) {
     hls.on(window.Hls.Events.ERROR, (_event, data) => {
       if (token !== loadToken) return;
       if (!data || !data.fatal) return;
+      fatalSeen = data.details || 'unknown';
       if (!FATAL.has(data.details)) return;
-      showProblem('This channel is not playing', data.details);
+      // The page cannot say why -- hls.js reports one "network error" for a
+      // missing host, a timeout and a geo-block alike. Main checks for itself and
+      // answers, so the words on screen are worth reading.
+      showProblem('This channel isn’t playing', 'Checking what happened…');
+      problemCounted.hidden = true;
+      problemHide.hidden = true;
+      wake();
+      window.player.failed(currentUrl);
     });
 
     hls.loadSource(url);
@@ -125,10 +197,21 @@ function load(payload) {
   wake();
 }
 
-video.addEventListener('playing', clearProblem);
+/**
+ * A channel that plays clears its run of failures, so nothing is ever hidden for
+ * failures that were followed by a good one.
+ */
+video.addEventListener('playing', () => {
+  clearProblem();
+  if (currentUrl) window.player.playing(currentUrl);
+});
+
 video.addEventListener('error', () => {
   const code = video.error && video.error.code;
-  if (code === 3 || code === 4) showProblem('This channel is not playing', 'the stream was refused');
+  if (code === 3 || code === 4) {
+    showProblem('This channel isn’t playing', 'Checking what happened…');
+    window.player.failed(currentUrl);
+  }
 });
 
 /* ---------------- slides ---------------- */
@@ -367,5 +450,56 @@ video.addEventListener('click', unmute);
 
 window.player.onLoad(load);
 window.player.onChannels((data) => buildList(data));
-window.player.report({ ready: true });
+
+/**
+ * Main's verdict on the last failure. It arrives after the page has already said
+ * something is wrong, and replaces that with the reason and whether it counted.
+ */
+window.player.onExplained((detail) => {
+  // An answer about a channel that is no longer on screen is not worth showing.
+  if (detail.url !== currentUrl) return;
+  showDiagnosis(detail);
+  if (detail.hidden) {
+    // The tile is going. Take it out of the list so it cannot be picked again
+    // while this window is open.
+    document.querySelector(`.ch[data-url="${cssEscape(detail.url)}"]`)?.remove();
+  }
+});
+
+/** `CSS.escape` is not in every build, and a URL can hold a quote. */
+function cssEscape(value) {
+  return String(value).replace(/["\\]/g, '\\$&');
+}
+
+/**
+ * A small window onto the player's own state, for the checks in
+ * scripts/verify-*.js. Nothing here drives behaviour; it only says what happened,
+ * which is otherwise invisible because these are file-scope bindings.
+ */
+window.__player = {
+  get currentUrl() {
+    return currentUrl;
+  },
+  get loadCount() {
+    return loadCount;
+  },
+  get lastError() {
+    return lastError;
+  },
+  get listCount() {
+    return grouped.length;
+  },
+  get fatalSeen() {
+    return fatalSeen;
+  },
+};
+
+window.__player.reported = false;
+window.__player.bridgeError = null;
+try {
+  window.player.report({ ready: true });
+  window.__player.reported = true;
+} catch (err) {
+  window.__player.bridgeError = err.message;
+}
 wake();

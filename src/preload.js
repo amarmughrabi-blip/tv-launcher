@@ -47,6 +47,9 @@ contextBridge.exposeInMainWorld('api', {
   channels: () => ipcRenderer.invoke('channels:get'),
   playChannel: (url) => ipcRenderer.invoke('channels:play', { url }),
   closePlayer: () => ipcRenderer.invoke('player:close'),
+  /** Take a channel off the grid, or put it back. Neither touches the list itself. */
+  hideChannel: (url) => ipcRenderer.invoke('channel:hide', { url }),
+  restoreChannel: (url) => ipcRenderer.invoke('channel:restore', { url }),
   currentSite: () => ipcRenderer.invoke('site:current'),
 
   braveAvailable: () => ipcRenderer.invoke('brave:available'),
@@ -65,6 +68,8 @@ contextBridge.exposeInMainWorld('api', {
   debugPlayerToggle: () => ipcRenderer.invoke('debug:player-toggle'),
   debugLauncherVisible: () => ipcRenderer.invoke('debug:launcher-visible'),
   debugPlayerPickGenre: (genre) => ipcRenderer.invoke('debug:player-pick-genre', { genre }),
+  debugPlayerInternals: () => ipcRenderer.invoke('debug:player-internals'),
+  debugHealth: () => ipcRenderer.invoke('debug:health'),
   debugPopups: () => ipcRenderer.invoke('debug:popups'),
   debugCosmetics: () => ipcRenderer.invoke('debug:cosmetics'),
   // Start-up progress: the loading screen covers the window until 'ready'.

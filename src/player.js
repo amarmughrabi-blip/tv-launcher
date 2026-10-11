@@ -58,6 +58,22 @@ function onPageReady() {
   flush();
 }
 
+/**
+ * What the queue is holding, for the checks in scripts/verify-*.js.
+ *
+ * A message sent to a page that has not finished loading is simply dropped, and
+ * nothing on either side looks wrong when that happens. These three values are
+ * the only way to tell a lost message from a page that ignored it.
+ */
+function internals() {
+  return {
+    pageReady,
+    hasPending: Boolean(pending),
+    hasPendingList: Boolean(pendingList),
+    open: isOpen(),
+  };
+}
+
 /** Supply the grouped channel list so the player can switch without leaving. */
 function setChannels(grouped) {
   pendingList = grouped;
@@ -69,24 +85,50 @@ function resetPageState() {
   pending = null;
 }
 
+/**
+ * How long a stream fetch may hang before the player is told to stop waiting.
+ *
+ * Without this the proxy waits on a host that never answers, hls.js waits on the
+ * proxy, and the window sits on a black screen saying nothing. A stream that
+ * cannot be reached has to fail visibly -- and "could not be reached" is a
+ * different answer from "is gone", which is exactly the distinction the channel
+ * health counts on.
+ */
+const STREAM_TIMEOUT_MS = 15000;
+
 /** tv://host/path -> https://host/path, fetched in main so no CORS applies. */
 function handler() {
   protocol.handle(SCHEME, async (request) => {
     let target;
+    let parsed;
     try {
-      const url = new URL(request.url);
-      target = `https://${url.host}${url.pathname}${url.search}`;
+      parsed = new URL(request.url);
     } catch (err) {
       return new Response(`bad stream url: ${err.message}`, { status: 400 });
     }
+    // Keep the scheme the channel actually used. Forcing https on an http://
+    // channel turns a working stream into a connection to a port nobody is
+    // listening on, which reads as "dead" when it is not.
+    const scheme = parsed.protocol === 'http:' ? 'http:' : 'https:';
+    target = `${scheme}//${parsed.host}${parsed.pathname}${parsed.search}`;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), STREAM_TIMEOUT_MS);
     try {
       // Returned straight through: main's fetch is not subject to CORS, and the
       // body has to stay a stream for live playback rather than buffering.
       return await net.fetch(target, {
         headers: { 'User-Agent': 'Mozilla/5.0' },
+        signal: controller.signal,
       });
     } catch (err) {
-      return new Response(`stream unreachable: ${err.message}`, { status: 502 });
+      const hung = controller.signal.aborted;
+      return new Response(
+        hung ? 'stream did not respond' : `stream unreachable: ${err.message}`,
+        { status: hung ? 504 : 502 },
+      );
+    } finally {
+      clearTimeout(timer);
     }
   });
 }
@@ -103,6 +145,12 @@ function toStreamUrl(url) {
 
 function isOpen() {
   return Boolean(win && !win.isDestroyed());
+}
+
+/** Tell the page why a channel failed, in words rather than a code. */
+function explain(url, detail) {
+  if (!isOpen()) return;
+  win.webContents.send('player:explained', { url, ...detail });
 }
 
 /**
@@ -194,7 +242,9 @@ module.exports = {
   open,
   close,
   send,
+  explain,
   setChannels,
+  internals,
   isOpen,
   onPageReady,
   toStreamUrl,

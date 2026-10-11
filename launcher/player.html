@@ -45,9 +45,20 @@
         </div>
       </div>
 
+      <!--
+        Shown only when a channel genuinely is not playing, and it says what
+        happened in words rather than showing an error code. Whether it counted
+        towards hiding is stated too, because a geo-block is not the same as a
+        channel that has gone.
+      -->
       <div class="problem" id="problem" hidden>
-        <p class="problem-title" id="problem-title">This channel is not playing</p>
-        <p class="problem-detail" id="problem-detail"></p>
+        <p class="problem-title" id="problem-title">This channel isn’t playing</p>
+        <p class="problem-detail" id="problem-detail">Checking…</p>
+        <p class="problem-counted" id="problem-counted" hidden></p>
+        <div class="problem-actions">
+          <button class="pbtn" id="problem-retry">Try again</button>
+          <button class="pbtn" id="problem-hide">Hide this channel</button>
+        </div>
         <p class="problem-hint">Press Escape to go back</p>
       </div>
 

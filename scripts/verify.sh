@@ -63,6 +63,22 @@ cat > "${SCRATCH}/adblock-launcher/channels.json" <<'JSON'
       "logo": null
     },
     {
+      "name": "Dead Channel",
+      "url": "http://127.0.0.1:9/dead.m3u8",
+      "genre": "news",
+      "country": "ZZ",
+      "res": "1920x1080",
+      "logo": null
+    },
+    {
+      "name": "Unreachable Channel",
+      "url": "http://192.0.2.1:8080/hangs.m3u8",
+      "genre": "news",
+      "country": "ZZ",
+      "res": "1920x1080",
+      "logo": null
+    },
+    {
       "name": "MTV",
       "url": "https://example.com/music.m3u8",
       "genre": "music",

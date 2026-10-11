@@ -1,99 +1,39 @@
 'use strict';
 
 /**
- * Channel health.
+ * Channel health, from a terminal.
  *
  * Free streams rot. Roughly 44% of a community playlist was already dead when
  * it was last checked, so a list that is only ever added to slowly fills with
  * tiles that go nowhere.
  *
  *   node scripts/check-channels.js [--concurrency N] [--reset] [--quiet]
+ *                                   [--dry-run] [--which all|unchecked|failed]
  *
- * Two rules, both deliberate:
+ * Three rules, all deliberate:
  *
- *  - A channel is dropped only after several *consecutive* failed probes. One
- *    failure is far more likely to be a flaky connection than a channel that has
- *    gone, and dropping on the first would empty the grid over an afternoon.
- *  - The master list is never rewritten. Results go to channel-health.json and
- *    are merged at read time, so re-probing cannot damage the researched list.
+ *  - A channel is dropped only after several *consecutive* failures. One failure
+ *    is far more likely to be a flaky connection than a channel that has gone,
+ *    and dropping on the first would empty the grid over an afternoon.
+ *  - Only *hard* failures count. A timeout, a reset, a 403 from a geo-block or a
+ *    5xx say more about this machine than about the channel, and counting them
+ *    would hide channels that work perfectly for someone else.
+ *  - The master list is never rewritten. Results go to channel-health.json and are
+ *    merged at read time, so re-probing cannot damage the researched list.
  *
- * A probe fetches the manifest and checks it parses as HLS with at least one
- * segment. That is cheap and catches the common failures: the host is gone, the
- * path 404s, or the response is an HTML error page.
+ * The probe and the classifier are shared with the app. If this script had its
+ * own, a sweep run here would count differently from one the app makes while
+ * playing -- and the harder of the two to reason about would be the one being
+ * run by hand.
  */
 
-const https = require('node:https');
-const http = require('node:http');
-const { URL } = require('node:url');
 const channels = require('../src/channels');
+const { probe, classify } = require('../src/channel-probe');
+const { shouldCount } = require('../src/channel-health');
 const { paths } = require('../src/paths');
 const fs = require('node:fs');
 
 const DEFAULT_CONCURRENCY = 12;
-const PROBE_TIMEOUT_MS = 8000;
-const USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120 Safari/537.36';
-
-/** A manifest that is really HLS, not an HTML page that happens to return 200. */
-async function probe(url) {
-  let parsed;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return { ok: false, reason: 'unparseable url' };
-  }
-
-  return new Promise((resolve) => {
-    const client = parsed.protocol === 'http:' ? http : https;
-    const req = client.get(
-      url,
-      { timeout: PROBE_TIMEOUT_MS, headers: { 'User-Agent': USER_AGENT } },
-      (res) => {
-        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          res.resume();
-          probe(new URL(res.headers.location, url).toString()).then(resolve);
-          return;
-        }
-        if (res.statusCode !== 200) {
-          res.resume();
-          resolve({ ok: false, reason: `http ${res.statusCode}` });
-          return;
-        }
-
-        let body = '';
-        // A manifest header is enough; pulling the whole playlist would mean
-        // downloading every segment reference for no extra signal.
-        res.setEncoding('utf8');
-        res.on('data', (chunk) => {
-          body += chunk;
-          if (body.length > 4096) {
-            res.destroy();
-            finish();
-          }
-        });
-        res.on('end', finish);
-        res.on('error', () => resolve({ ok: false, reason: 'read error' }));
-
-        function finish() {
-          if (!body.startsWith('#EXTM3U')) {
-            resolve({ ok: false, reason: 'not a manifest' });
-            return;
-          }
-          if (!/#EXTINF/.test(body)) {
-            // A manifest with no segments is a channel that has gone quiet.
-            resolve({ ok: false, reason: 'no segments' });
-            return;
-          }
-          resolve({ ok: true });
-        }
-      },
-    );
-    req.on('timeout', () => {
-      req.destroy();
-      resolve({ ok: false, reason: 'timeout' });
-    });
-    req.on('error', (err) => resolve({ ok: false, reason: err.code || err.message }));
-  });
-}
 
 async function main() {
   const argv = process.argv.slice(2);
@@ -102,9 +42,13 @@ async function main() {
   ) || DEFAULT_CONCURRENCY;
   const reset = argv.includes('--reset');
   const quiet = argv.includes('--quiet');
+  // A sweep that cannot be undone without re-probing everything is a sweep worth
+  // being able to look at first.
+  const dryRun = argv.includes('--dry-run');
+  const which = argv[argv.indexOf('--which') + 1] || 'unchecked';
 
-  const list = channels.all();
-  if (!list.length) {
+  const every = channels.all();
+  if (!every.length) {
     console.error('no channels imported — run scripts/import-channels.js first');
     return 1;
   }
@@ -119,11 +63,19 @@ async function main() {
     }
   }
 
+  const list = pick(every, which);
+  if (!list.length) {
+    console.error(`nothing to check for --which ${which}`);
+    return 1;
+  }
+
   console.log(`probing ${list.length} channels, ${concurrency} at a time`);
   const at = new Date().toISOString();
   let done = 0;
   let newlyDead = 0;
   let recovered = 0;
+  let uncertain = 0;
+  const wouldHide = [];
 
   let cursor = 0;
   async function worker() {
@@ -131,16 +83,24 @@ async function main() {
       const channel = list[cursor];
       cursor += 1;
       const result = await probe(channel.url);
+      const reason = classify(result);
 
       const previous = health[channel.url] || { fails: 0 };
       if (result.ok) {
         if (previous.fails > 0) recovered += 1;
         health[channel.url] = { fails: 0, at, reason: null };
+      } else if (!shouldCount(reason)) {
+        // Recorded so the app can explain it, but the counter does not move.
+        uncertain += 1;
+        health[channel.url] = { fails: previous.fails || 0, at, reason };
       } else {
         const fails = (previous.fails || 0) + 1;
         const wasDead = previous.fails >= channels.FAILURES_BEFORE_DROP;
-        health[channel.url] = { fails, at, reason: result.reason };
-        if (!wasDead && fails >= channels.FAILURES_BEFORE_DROP) newlyDead += 1;
+        health[channel.url] = { fails, at, reason };
+        if (!wasDead && fails >= channels.FAILURES_BEFORE_DROP) {
+          newlyDead += 1;
+          wouldHide.push({ name: channel.name, reason });
+        }
       }
 
       done += 1;
@@ -150,6 +110,17 @@ async function main() {
 
   await Promise.all(Array.from({ length: concurrency }, worker));
 
+  if (dryRun) {
+    console.log('');
+    console.log(`dry run — nothing written`);
+    console.log(`would newly hide ${wouldHide.length}, recovered ${recovered}, uncertain ${uncertain}`);
+    for (const entry of wouldHide.slice(0, 40)) {
+      console.log(`  hide  ${entry.name} — ${entry.reason}`);
+    }
+    if (wouldHide.length > 40) console.log(`  ... and ${wouldHide.length - 40} more`);
+    return 0;
+  }
+
   fs.mkdirSync(paths.appDir(), { recursive: true });
   fs.writeFileSync(healthPath, `${JSON.stringify(health, null, 1)}\n`);
 
@@ -158,11 +129,25 @@ async function main() {
   console.log(`probed ${done} channels`);
   console.log(`live ${s.live} / hidden ${s.hidden} of ${s.total}`);
   console.log(`newly hidden ${newlyDead}, recovered ${recovered}`);
+  console.log(`could not be judged ${uncertain} (timed out, or blocked here — not counted)`);
   console.log(`written to ${healthPath}`);
   console.log('');
   console.log(`a channel is hidden after ${channels.FAILURES_BEFORE_DROP} consecutive failures`);
   console.log('--reset forgets the history and starts counting again');
+  console.log('--dry-run reports without writing');
   return 0;
+}
+
+/**
+ * Which channels this run is about.
+ *
+ * `unchecked` is the default because those are the ones doing nothing: nobody
+ * has ever opened them, so nothing is known about whether they still work.
+ */
+function pick(list, which) {
+  if (which === 'all') return list;
+  if (which === 'failed') return list.filter((c) => c.fails > 0);
+  return list.filter((c) => !c.checked);
 }
 
 main()
