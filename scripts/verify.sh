@@ -27,6 +27,53 @@ cat > "${SCRATCH}/adblock-launcher/sites.json" <<'JSON'
 ]
 JSON
 
+cat > "${SCRATCH}/adblock-launcher/channels.json" <<'JSON'
+{
+  "channels": [
+    {
+      "name": "Al Jazeera",
+      "url": "https://live-hls-apps-aja-fa.getaj.net/AJA/01.m3u8",
+      "genre": "news",
+      "country": "QA",
+      "res": "1920x1080",
+      "logo": null
+    },
+    {
+      "name": "BBC News",
+      "url": "https://example.com/news.m3u8",
+      "genre": "news",
+      "country": "GB",
+      "res": "1280x720",
+      "logo": null
+    },
+    {
+      "name": "Sky Sports",
+      "url": "https://example.com/sports.m3u8",
+      "genre": "sports",
+      "country": "GB",
+      "res": "1920x1080",
+      "logo": null
+    },
+    {
+      "name": "Cartoon Network",
+      "url": "https://example.com/kids.m3u8",
+      "genre": "kids",
+      "country": "US",
+      "res": "640x360",
+      "logo": null
+    },
+    {
+      "name": "MTV",
+      "url": "https://example.com/music.m3u8",
+      "genre": "music",
+      "country": "US",
+      "res": "1920x1080",
+      "logo": null
+    }
+  ]
+}
+JSON
+
 XDG_DATA_HOME="${SCRATCH}" \
 TVL_VERIFY="${ROOT}/${SCRIPT}" \
 TVL_DEBUG_INPUT=1 \

@@ -13,12 +13,13 @@
     "verify:browsing": "./scripts/verify.sh scripts/verify-browsing.js",
     "verify:icons": "node scripts/make-fixture.js && ./scripts/verify.sh scripts/verify-icons.js",
     "verify:blocking": "./scripts/run.sh scripts/verify-blocking.js",
-    "verify": "npm test && npm run verify:blocking && npm run verify:editing && npm run verify:browsing && npm run verify:icons && npm run verify:chrome && npm run verify:profiles && npm run verify:ads && npm run verify:layout && npm run verify:startup",
+    "verify": "npm test && npm run verify:blocking && npm run verify:editing && npm run verify:browsing && npm run verify:icons && npm run verify:chrome && npm run verify:profiles && npm run verify:ads && npm run verify:layout && npm run verify:startup && npm run verify:tv",
     "verify:ads": "./scripts/verify.sh scripts/verify-ads.js",
     "verify:chrome": "./scripts/verify.sh scripts/verify-chrome.js",
     "verify:profiles": "./scripts/verify.sh scripts/verify-profiles.js",
     "verify:layout": "./scripts/verify.sh scripts/verify-layout.js",
-    "verify:startup": "./scripts/verify.sh scripts/verify-startup.js"
+    "verify:startup": "./scripts/verify.sh scripts/verify-startup.js",
+    "verify:tv": "./scripts/verify.sh scripts/verify-tv.js"
   },
   "dependencies": {
     "@ghostery/adblocker": "^2.20.1"

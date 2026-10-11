@@ -44,6 +44,9 @@ contextBridge.exposeInMainWorld('api', {
 
   openSite: (url) => ipcRenderer.invoke('site:open', { url }),
   back: () => ipcRenderer.invoke('site:back'),
+  channels: () => ipcRenderer.invoke('channels:get'),
+  playChannel: (url) => ipcRenderer.invoke('channels:play', { url }),
+  closePlayer: () => ipcRenderer.invoke('player:close'),
   currentSite: () => ipcRenderer.invoke('site:current'),
 
   braveAvailable: () => ipcRenderer.invoke('brave:available'),
@@ -55,6 +58,8 @@ contextBridge.exposeInMainWorld('api', {
   debugWindows: () => ipcRenderer.invoke('debug:windows'),
   debugBlocker: () => ipcRenderer.invoke('debug:blocker'),
   debugRealClick: (x, y) => ipcRenderer.invoke('debug:real-click', { x, y }),
+  debugPlayer: () => ipcRenderer.invoke('debug:player'),
+  debugPlayerPixels: () => ipcRenderer.invoke('debug:player-pixels'),
   debugPopups: () => ipcRenderer.invoke('debug:popups'),
   debugCosmetics: () => ipcRenderer.invoke('debug:cosmetics'),
   // Start-up progress: the loading screen covers the window until 'ready'.

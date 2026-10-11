@@ -21,6 +21,8 @@ const { app, BrowserWindow, WebContentsView, ipcMain, protocol, net, shell, webC
 
 const { GUARD: POPUNDER_GUARD } = require('./src/popunder-guard');
 const { CONTROLS_SCRIPT } = require('./src/site-controls');
+const channels = require('./src/channels');
+const player = require('./src/player');
 const store = require('./src/store');
 const icons = require('./src/icons');
 const favicons = require('./src/favicons');
@@ -66,6 +68,9 @@ process.on('unhandledRejection', (reason) => {
 // Must run before the app is ready.
 protocol.registerSchemesAsPrivileged([
   { scheme: 'app-icon', privileges: { standard: true, secure: true, supportFetchAPI: true } },
+  // Streams are fetched through main: broadcast CDNs send no CORS headers, so
+  // the player cannot pull segments itself.
+  { scheme: player.SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
 ]);
 
 const SITE_PARTITION = 'persist:sites';
@@ -542,6 +547,58 @@ ipcMain.on('site:control', (_e, { action } = {}) => {
 });
 
 ipcMain.handle('site:open', (_e, { url }) => openSite(url));
+
+/* --- live TV ---------------------------------------------------------------- */
+
+// The list is the same for every profile, so it is loaded once and read whole.
+// 453 records is small enough that filtering client-side costs nothing and saves
+// a round trip per tab switch.
+ipcMain.handle('channels:get', () => ({
+  grouped: channels.grouped(),
+  summary: channels.summary(),
+}));
+
+/**
+ * Play a channel in the player window.
+ *
+ * Looks the channel up by URL rather than trusting a name from the renderer:
+ * the renderer is the least trustworthy party involved, and this is what decides
+ * which URL gets fetched.
+ */
+ipcMain.handle('channels:play', (_e, { url }) => {
+  const channel = channels.findByUrl(url);
+  if (!channel) return { ok: false, error: 'unknown channel' };
+  const result = player.open(channel, mainWindow);
+  if (result.ok && !mainWindow.isDestroyed()) mainWindow.hide();
+  return result;
+});
+
+ipcMain.handle('player:close', () => {
+  player.close();
+  return { ok: true };
+});
+
+ipcMain.handle('player:toggle-fullscreen', (_e, { on } = {}) => {
+  if (!player.isOpen()) return { ok: false };
+  const target = playerWindowRef();
+  if (!target) return { ok: false };
+  target.setFullScreen(on === undefined ? !target.isFullScreen() : Boolean(on));
+  return { ok: true, fullscreen: target.isFullScreen() };
+});
+
+function playerWindowRef() {
+  // The player owns its window; main only needs a handle for fullscreen.
+  const all = BrowserWindow.getAllWindows();
+  return all.find((w) => w !== mainWindow && !w.isDestroyed()) || null;
+}
+
+ipcMain.on('player:report', (_e, payload) => {
+  if (!payload) return;
+  // The page announcing itself is what releases the queued channel: a message
+  // sent before the page has run is simply dropped.
+  if (payload.ready) player.onPageReady();
+  if (payload.error) log(`player: ${JSON.stringify(payload)}`);
+});
 ipcMain.handle('site:back', () => {
   closeSite();
   return { ok: true };
@@ -636,6 +693,38 @@ if (process.env.TVL_DEBUG_INPUT === '1') {
     wc.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 });
     wc.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 });
     return { ok: true };
+  });
+
+  ipcMain.handle('debug:player', async () => {
+    if (!player.isOpen()) return { open: false };
+    const w = playerWindowRef();
+    const state = await w.webContents.executeJavaScript(`(() => {
+      const v = document.getElementById('video');
+      return JSON.stringify({
+        t: Number(v.currentTime.toFixed(2)),
+        w: v.videoWidth, h: v.videoHeight,
+        paused: v.paused, ready: v.readyState,
+        problem: !document.getElementById('problem').hidden,
+      });
+    })()`).catch((e) => JSON.stringify({ err: e.message }));
+    return { open: true, fullscreen: w.isFullScreen(), state: JSON.parse(state) };
+  });
+
+  ipcMain.handle('debug:player-pixels', async () => {
+    if (!player.isOpen()) return { ok: false };
+    const w = playerWindowRef();
+    return w.webContents.executeJavaScript(`(async () => {
+      const v = document.getElementById('video');
+      for (let i = 0; i < 25 && v.currentTime < 0.3; i++) await new Promise(r => setTimeout(r, 200));
+      const c = document.createElement('canvas');
+      c.width = 160; c.height = 90;
+      const g = c.getContext('2d');
+      g.drawImage(v, 0, 0, 160, 90);
+      const d = g.getImageData(0, 0, 160, 90).data;
+      let lit = 0;
+      for (let i = 0; i < d.length; i += 4) if (d[i] + d[i+1] + d[i+2] > 24) lit++;
+      return JSON.stringify({ nonBlackPct: Math.round((lit / (d.length / 4)) * 100), t: Number(v.currentTime.toFixed(2)) });
+    })()`).catch((e) => ({ ok: false, err: e.message }));
   });
 
   ipcMain.handle('debug:popups', () => ({ attempted: popupsAttempted }));
@@ -821,6 +910,7 @@ app.on('second-instance', () => {
 if (isPrimary) app.whenReady().then(async () => {
   paths.ensure();
   favicons.pruneCache();
+  player.handler();
   protocol.handle('app-icon', (request) => {
     // basename() strips any directory component, so the name is a single
     // segment before it is joined onto a known root.

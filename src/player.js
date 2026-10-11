@@ -1,0 +1,164 @@
+'use strict';
+
+/**
+ * The live TV player: its own window, playing its own stream.
+ *
+ * Two things make this a separate window rather than part of the launcher:
+ *
+ *  - The launcher page's own security policy does not allow media, so video
+ *    cannot play there at all.
+ *  - A site is a WebContentsView *inside* the main window. That is the wrong
+ *    shape here: watching a channel wants the whole screen to itself.
+ *
+ * Streams are fetched through the `tv://` scheme, which main resolves to the
+ * real https URL. That is not decoration. Broadcast CDNs generally send no
+ * CORS headers -- Al Jazeera sends none at all -- so hls.js fetching segments
+ * straight from the renderer would be blocked. Proxying in main sidesteps that,
+ * and it makes the plain-http channels (95 of the 453) behave the same as the
+ * https ones instead of tripping mixed-content rules.
+ */
+
+const path = require('node:path');
+const { BrowserWindow, protocol, net } = require('electron');
+
+/** Scheme the player page hands to hls.js in place of a real origin. */
+const SCHEME = 'tv';
+
+let win = null;
+
+/**
+ * Whether the player page has loaded, and what it should be told once it has.
+ *
+ * The first channel has to wait for this. Sending as soon as the window exists
+ * delivers the message to a page that has not run yet, and it is simply lost --
+ * the window then opens onto nothing at all, which looks like a broken channel
+ * rather than a missed message.
+ */
+let pageReady = false;
+let pending = null;
+
+function flush() {
+  if (!pageReady || !pending || !isOpen()) return;
+  const payload = pending;
+  pending = null;
+  win.webContents.send('player:load', payload);
+}
+
+/** The page tells us it is listening. Called once per load of the page. */
+function onPageReady() {
+  pageReady = true;
+  flush();
+}
+
+function resetPageState() {
+  pageReady = false;
+  pending = null;
+}
+
+/** tv://host/path -> https://host/path, fetched in main so no CORS applies. */
+function handler() {
+  protocol.handle(SCHEME, async (request) => {
+    let target;
+    try {
+      const url = new URL(request.url);
+      target = `https://${url.host}${url.pathname}${url.search}`;
+    } catch (err) {
+      return new Response(`bad stream url: ${err.message}`, { status: 400 });
+    }
+    try {
+      // Returned straight through: main's fetch is not subject to CORS, and the
+      // body has to stay a stream for live playback rather than buffering.
+      return await net.fetch(target, {
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+      });
+    } catch (err) {
+      return new Response(`stream unreachable: ${err.message}`, { status: 502 });
+    }
+  });
+}
+
+/** Re-express a channel URL as the scheme the player page can actually fetch. */
+function toStreamUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return `${SCHEME}://${parsed.host}${parsed.pathname}${parsed.search}`;
+  } catch {
+    return url;
+  }
+}
+
+function isOpen() {
+  return Boolean(win && !win.isDestroyed());
+}
+
+/**
+ * Open (or retarget) the player. One window, reused between channels: creating
+ * a window per channel costs a visible flash and a fresh hls.js instance, and
+ * the user is switching between channels with the remote.
+ */
+function open(channel, parentWindow) {
+  if (!channel || !channel.url) return { ok: false, error: 'no channel' };
+
+  if (!isOpen()) {
+    win = new BrowserWindow({
+      width: Math.max(1024, parentWindow ? parentWindow.getContentSize()[0] : 1280),
+      height: Math.max(640, parentWindow ? parentWindow.getContentSize()[1] : 720),
+      backgroundColor: '#000000',
+      autoHideMenuBar: true,
+      // The window must be able to go fullscreen for video, and must be able to
+      // take focus so a remote's keys reach it.
+      title: 'TV',
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+        preload: path.join(__dirname, 'player-preload.js'),
+      },
+    });
+
+    // Closing is the only way out of a fullscreen window from the keyboard, so
+    // it is the primary escape; Escape is handled by the page as well.
+    win.on('closed', () => {
+      win = null;
+      resetPageState();
+      if (parentWindow && !parentWindow.isDestroyed()) parentWindow.focus();
+    });
+
+    resetPageState();
+    win.loadFile(path.join(__dirname, '..', 'launcher', 'player.html'));
+  }
+
+  // Queued, not sent: on a freshly created window the page is not listening yet.
+  pending = {
+    url: toStreamUrl(channel.url),
+    name: channel.name,
+    res: channel.res || null,
+  };
+  flush();
+
+  if (!win.isVisible()) win.show();
+  win.focus();
+  // Watching wants the whole screen. Deferred a moment so the window is mapped
+  // before the request, which some compositors drop otherwise.
+  setTimeout(() => {
+    if (isOpen() && !win.isFullScreen()) win.setFullScreen(true);
+  }, 120);
+  return { ok: true, name: channel.name };
+}
+
+function close() {
+  if (isOpen()) win.close();
+}
+
+function send(channel) {
+  if (isOpen() && channel && channel.url) {
+    pending = {
+      url: toStreamUrl(channel.url),
+      name: channel.name,
+      res: channel.res || null,
+    };
+    flush();
+  }
+}
+
+module.exports = { handler, open, close, send, isOpen, onPageReady, toStreamUrl, SCHEME };

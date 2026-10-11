@@ -28,6 +28,12 @@ const el = {
   profileSave: document.getElementById('profile-save'),
   profileForm: document.getElementById('profile-form'),
   profileName: document.getElementById('profile-name'),
+  tabs: document.getElementById('tabs'),
+  tv: document.getElementById('tv'),
+  tvGrid: document.getElementById('tv-grid'),
+  tvGenres: document.getElementById('tv-genres'),
+  tvSummary: document.getElementById('tv-summary'),
+  tvEmpty: document.getElementById('tv-empty'),
   profileMeta: document.getElementById('profile-meta'),
   profileDelete: document.getElementById('profile-delete'),
   profileCancel: document.getElementById('profile-cancel'),
@@ -479,6 +485,23 @@ el.search.addEventListener('input', () => {
   render();
 });
 
+/* ------------------------------- TV ---------------------------------- */
+
+const tv = window.mountTv({
+  root: el.tv,
+  grid: el.tvGrid,
+  genresBar: el.tvGenres,
+  summaryEl: el.tvSummary,
+  emptyEl: el.tvEmpty,
+  load: () => bridge.channels(),
+  play: async (channel) => {
+    const result = await bridge.playChannel(channel.url);
+    if (!result || !result.ok) {
+      toast(`Could not open ${channel.name}`);
+    }
+  },
+});
+
 /* ------------------------------ tabs --------------------------------- */
 
 function setTab(next) {
@@ -489,6 +512,13 @@ function setTab(next) {
   // The banner belongs to the For You view. Leaving it up over the grid made
   // that tab feel like a detail page rather than a list.
   el.stage.classList.toggle('no-banner', tab !== 'home');
+
+  // TV replaces the apps grid entirely rather than sitting under it.
+  const onTv = tab === 'tv';
+  if (onTv) tv.show();
+  else tv.hide();
+  el.grid.hidden = onTv;
+  el.tabs.hidden = onTv;
 
   // Opening Search focuses the field so typing works straight away.
   if (tab === 'search') {

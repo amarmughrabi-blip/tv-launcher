@@ -832,3 +832,159 @@ body::before {
   font-size: 13px;
   color: var(--muted);
 }
+
+/* ---------------- live TV ---------------- */
+
+/*
+ * Channels get their own grid rather than being mixed in with the apps: they
+ * are not editable, not per-profile, and not what the apps search box is for.
+ * Mixing them would make one of the three lie about itself.
+ */
+.tv[hidden] {
+  display: none !important;
+}
+
+.tv-genres {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 2px 0 14px;
+  /* A long strip should not be clipped at the stage edge with no way to tell
+     there is more of it. */
+  scroll-snap-type: x proximity;
+}
+
+.tv-genres::-webkit-scrollbar {
+  display: none;
+}
+
+.tv-genre {
+  flex: none;
+  scroll-snap-align: start;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.16s var(--ease), color 0.16s var(--ease),
+    border-color 0.16s var(--ease);
+}
+
+.tv-genre:hover {
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--text);
+}
+
+.tv-genre.is-active {
+  background: hsl(var(--glow-hue) 85% 58%);
+  border-color: transparent;
+  color: #fff;
+}
+
+.tv-summary {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.tv-summary[hidden],
+.tv-empty[hidden] {
+  display: none !important;
+}
+
+.tv-empty {
+  margin: 40px 0;
+  color: var(--muted);
+  text-align: center;
+}
+
+.tv-section {
+  margin-bottom: 26px;
+}
+
+.tv-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(124px, 1fr));
+  gap: 14px;
+}
+
+.tv-tile {
+  display: grid;
+  gap: 7px;
+  justify-items: center;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.tv-face {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease);
+}
+
+.tv-tile:hover .tv-face,
+.tv-tile:focus-visible .tv-face {
+  transform: scale(1.05);
+  box-shadow: 0 0 0 2px hsl(var(--glow-hue) 92% 62% / 0.9), 0 8px 20px rgba(0, 0, 0, 0.4);
+}
+
+.tv-tile:focus-visible {
+  outline: none;
+}
+
+/* No logos in the source data, so tiles are drawn rather than fetched. If a
+   logo turns up the img path takes over and this is never built. */
+.tv-mark {
+  position: relative;
+  font: 700 26px/1 system-ui, sans-serif;
+  color: rgba(255, 255, 255, 0.94);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  letter-spacing: 0.02em;
+}
+
+.tv-res {
+  position: absolute;
+  right: -6px;
+  bottom: -8px;
+  font: 700 10px/1 system-ui, sans-serif;
+  font-style: normal;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.tv-logo {
+  width: 74%;
+  height: 74%;
+  object-fit: contain;
+}
+
+.tv-name {
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.25;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tv-tile:hover .tv-name,
+.tv-tile:focus-visible .tv-name {
+  color: var(--text);
+}

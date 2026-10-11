@@ -57,6 +57,12 @@
             <rect x="13.5" y="13.5" width="7" height="7" rx="1.6" />
           </svg>
         </button>
+        <button class="rail-btn" data-tab="tv" title="TV">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="2.5" y="6.5" width="19" height="12" rx="2" />
+            <path d="M8 2.5 12 6.5l4-4" />
+          </svg>
+        </button>
         <button class="rail-btn" data-tab="search" title="Search">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <circle cx="11" cy="11" r="6.5" />
@@ -93,11 +99,23 @@
         <div class="tabs" id="tabs">
           <button class="tab is-active" data-tab="home">For You</button>
           <button class="tab" data-tab="apps">Apps</button>
+          <button class="tab" data-tab="tv">TV</button>
         </div>
 
         <p id="empty" class="empty" hidden>
           No apps yet. Use <strong>Add app</strong> to put your first one on the grid.
         </p>
+
+        <!-- Live TV. A genre strip rather than every heading down the page:
+             there are 27 genres, which is a lot of scrolling on a TV. -->
+        <section class="tv" id="tv" hidden>
+          <div class="tv-genres" id="tv-genres" role="tablist" aria-label="Channel genres"></div>
+          <p class="tv-summary" id="tv-summary" hidden></p>
+          <div class="tv-grid" id="tv-grid"></div>
+          <p class="tv-empty" id="tv-empty" hidden>
+            No channels yet. Run <code>node scripts/import-channels.js</code> to add them.
+          </p>
+        </section>
 
         <main id="grid" class="grid"></main>
       </div>
@@ -208,6 +226,7 @@
 
     <div id="toast" class="toast" hidden></div>
 
+    <script src="tv.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

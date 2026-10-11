@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>TV</title>
+    <link rel="stylesheet" href="player.css" />
+  </head>
+  <body>
+    <div class="stage">
+      <video id="video" autoplay playsinline></video>
+
+      <!-- Only shown when something is actually wrong. A permanent overlay on
+           every channel would be worse than none. -->
+      <div class="problem" id="problem" hidden>
+        <p class="problem-title" id="problem-title">This channel is not playing</p>
+        <p class="problem-detail" id="problem-detail"></p>
+        <p class="problem-hint">Press Escape to go back</p>
+      </div>
+
+      <!-- Transient: the channel name, then out of the way. -->
+      <div class="now" id="now" hidden><span id="now-name"></span><span id="now-res"></span></div>
+    </div>
+
+    <script src="../vendor/hlsjs/hls.min.js"></script>
+    <script src="player.js"></script>
+  </body>
+</html>
