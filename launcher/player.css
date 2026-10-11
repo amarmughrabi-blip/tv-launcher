@@ -387,3 +387,13 @@ video {
   background: rgba(255, 255, 255, 0.16);
   outline: none;
 }
+
+/*
+ * Subtitle size is a setting, so it is a variable rather than a hard-coded size.
+ * Used by the player's own caption rendering; native HLS captions in this build
+ * are rendered by Chromium and do not read it, which is why the default matches
+ * the browser's own rather than pretending to control something it cannot.
+ */
+:root {
+  --subtitle-size: 22px;
+}

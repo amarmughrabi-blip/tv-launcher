@@ -34,6 +34,12 @@ const el = {
   tvGenres: document.getElementById('tv-genres'),
   tvSummary: document.getElementById('tv-summary'),
   tvEmpty: document.getElementById('tv-empty'),
+  railSettings: document.getElementById('rail-settings'),
+  settingsDialog: document.getElementById('settings-dialog'),
+  settingsCheckNow: document.getElementById('settings-check-now'),
+  settingsHidden: document.getElementById('settings-hidden'),
+  tvSweepOpen: document.getElementById('tv-sweep'),
+  tvHiddenToggle: document.getElementById('tv-hidden-toggle'),
   profileMeta: document.getElementById('profile-meta'),
   profileDelete: document.getElementById('profile-delete'),
   profileCancel: document.getElementById('profile-cancel'),
@@ -505,6 +511,33 @@ const tv = window.mountTv({
       toast(`Could not open ${channel.name}`);
     }
   },
+});
+
+/* ---------------------------- settings -------------------------------- */
+
+const settingsScreen = window.mountSettings({
+  api: bridge,
+  toast,
+  // Genres and region both change what the TV page shows, so it has to redraw
+  // rather than keep a grid the settings no longer describe.
+  onChannelChange: () => tv.loadData(),
+});
+
+el.railSettings.addEventListener('click', () => settingsScreen.open());
+
+// Channel management belongs in settings as well as on the TV page: the gear is
+// where somebody looks for "how do I get rid of this", and the TV page is where
+// the channels are. Both open the same dialogs rather than two copies of them.
+el.settingsCheckNow.addEventListener('click', () => {
+  el.settingsDialog.close();
+  document.querySelector('.rail-btn[data-tab="tv"]').click();
+  setTimeout(() => el.tvSweepOpen.click(), 900);
+});
+
+el.settingsHidden.addEventListener('click', () => {
+  el.settingsDialog.close();
+  document.querySelector('.rail-btn[data-tab="tv"]').click();
+  setTimeout(() => el.tvHiddenToggle.click(), 900);
 });
 
 /* ------------------------------ tabs --------------------------------- */

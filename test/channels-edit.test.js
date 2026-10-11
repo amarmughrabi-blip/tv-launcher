@@ -145,9 +145,20 @@ test('the hidden list holds exactly what is hidden', () => {
     { name: 'Live One', genre: 'news', url: alive },
   ]);
 
-  for (let i = 0; i < 3; i += 1) {
-    channels.recordResult(dead, { ok: false, reason: 'gone' });
-  }
+  // Seeded with a run of days rather than attempts: the rule counts days, so
+  // three calls in a row would all land on today and hide nothing.
+  channels.writeHealth({
+    [dead]: {
+      fails: 7,
+      days: Array.from({ length: 7 }, (_, i) => {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        return channels.dayKey(d);
+      }),
+      at: new Date().toISOString(),
+      reason: 'gone',
+    },
+  });
 
   const hidden = channels.hidden();
   assert.strictEqual(hidden.length, 1);

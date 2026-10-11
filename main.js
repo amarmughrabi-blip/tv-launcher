@@ -25,6 +25,7 @@ const channels = require('./src/channels');
 const probe = require('./src/channel-probe');
 const { explain } = require('./src/channel-health');
 const sweepEngine = require('./src/sweep');
+const settings = require('./src/settings');
 
 const readChannelHealth = channels.readHealth;
 const writeChannelHealth = channels.writeHealth;
@@ -84,6 +85,13 @@ const SITE_PARTITION = 'persist:sites';
 /** Last cosmetic injection, exposed for the live check. */
 let lastCosmeticsChars = 0;
 let cosmeticsApplied = 0;
+/**
+ * The key returned by insertCSS, so the injected sheet can be taken back out.
+ * Turning element hiding off has to actually remove the CSS already in the page,
+ * not merely stop adding more -- otherwise the switch would appear to do nothing
+ * until the next navigation.
+ */
+let cosmeticsKey = null;
 
 /**
  * Counts pop-up attempts. The launcher must never hand anything to the system
@@ -114,6 +122,15 @@ const CHROME_TRAVEL_PX = 56;
 let mainWindow = null;
 let siteView = null;
 let blocker = null;
+
+/**
+ * The settings, cached.
+ *
+ * The blocker asks "is blocking on?" once per network request. Reading and
+ * parsing the file each time would be absurd, so it gets this instead, and the
+ * cache is dropped whenever a setting changes.
+ */
+let settingsCache = settings.all();
 /** The bar auto-hides over a site, and the site then gets the whole window. */
 let chromeVisible = true;
 let chromeTimer = null;
@@ -418,7 +435,7 @@ function openSite(url) {
     const { styles } = blocker.cosmeticsFor(current);
     if (!styles) return;
     try {
-      await view.webContents.insertCSS(styles);
+      cosmeticsKey = await view.webContents.insertCSS(styles);
       lastCosmeticsChars = styles.length;
       cosmeticsApplied += 1;
       log(`hid ad elements on ${current.slice(0, 60)} (${styles.length} bytes of CSS)`);
@@ -559,13 +576,45 @@ ipcMain.handle('site:open', (_e, { url }) => openSite(url));
 // The list is the same for every profile, so it is loaded once and read whole.
 // 453 records is small enough that filtering client-side costs nothing and saves
 // a round trip per tab switch.
-ipcMain.handle('channels:get', () => ({
-  grouped: channels.grouped(),
-  summary: channels.summary(),
-  hidden: channels.hidden(),
-  genres: channels.GENRES,
-  newGenre: channels.NEW_GENRE,
-}));
+/**
+ * The TV page's data, with the chosen genres and region applied.
+ *
+ * Filtering here rather than in the renderer means the counts on the genre chips
+ * describe what is actually on screen. A strip claiming "Legislative 2" over an
+ * empty grid is worse than no strip.
+ */
+ipcMain.handle('channels:get', () => {
+  const s = settingsCache;
+  const grouped = channels.grouped()
+    .filter((g) => settings.genreVisible(g.genre, s))
+    .map((g) => ({
+      ...g,
+      channels: s.region.length
+        ? g.channels.filter((c) => settings.countryVisible(c.country, s))
+        : g.channels,
+    }))
+    .filter((g) => g.channels.length);
+
+  return {
+    grouped,
+    summary: channels.summary(),
+    hidden: channels.hidden(),
+    genres: channels.GENRES,
+    newGenre: channels.NEW_GENRE,
+  };
+});
+
+/** Genre names with their channel counts, for the settings screen. */
+function channelGenresWithCounts() {
+  const counts = new Map();
+  for (const channel of channels.all()) {
+    if (channel.dead) continue;
+    counts.set(channel.genre, (counts.get(channel.genre) || 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([genre, count]) => ({ genre, count }))
+    .sort((a, b) => a.genre.localeCompare(b.genre));
+}
 
 /**
  * Play a channel in the player window.
@@ -767,6 +816,7 @@ ipcMain.on('player:report', (_e, payload) => {
     // Only now can the list be handed over: the same lost-message problem the
     // first channel had.
     player.setChannels(channels.grouped());
+    player.sendSettings();
   }
   if (payload.error) log(`player: ${JSON.stringify(payload)}`);
 });
@@ -850,6 +900,7 @@ if (process.env.TVL_DEBUG_INPUT === '1') {
   ipcMain.handle('debug:cosmetics', () => ({
     lastStyles: lastCosmeticsChars,
     applied: cosmeticsApplied,
+    key: cosmeticsKey,
   }));
 
   ipcMain.handle('debug:blocker', () => (blocker ? blocker.summary : null));
@@ -938,6 +989,117 @@ if (process.env.TVL_DEBUG_INPUT === '1') {
   });
 
   ipcMain.handle('debug:player-internals', async () => player.internals());
+
+  /**
+   * Bring an already-open page in line with settings that just changed.
+   *
+   * The site behind the settings screen is the one thing most likely to be
+   * affected, and it is already loaded -- so waiting for the next navigation would
+   * mean "turn element hiding off" appears to do nothing until you navigated away.
+   */
+  function applySettingsToOpenSite() {
+    if (!siteView || siteView.isDestroyed()) return;
+    if (!blocker || !blocker.ready) return;
+    const url = siteView.webContents.getURL();
+    if (!url || !url.startsWith('http')) return;
+
+    if (!settingsCache.hideInPageAds) {
+      if (!cosmeticsKey) return;
+      siteView.webContents.removeCSS(cosmeticsKey).catch(() => {});
+      cosmeticsKey = null;
+      lastCosmeticsChars = 0;
+      log(`element hiding off for ${url.slice(0, 60)}`);
+      return;
+    }
+
+    // Turning it on (or leaving it on) needs the sheet present now.
+    const { styles } = blocker.cosmeticsFor(url);
+    if (!styles || cosmeticsKey) return;
+    siteView.webContents
+      .insertCSS(styles)
+      .then((key) => {
+        cosmeticsKey = key;
+        lastCosmeticsChars = styles.length;
+      })
+      .catch(() => {});
+  }
+
+  /**
+   * Run a check now or never, per the setting.
+   *
+   * Deliberately not run in the background at startup: the filter parse is the
+   * slowest thing this app does, and stacking 453 requests on top of it would
+   * make the launcher feel slow for a screen the viewer may never open. A 'launch'
+   * check waits until the launcher is actually up.
+   */
+  function scheduleAutomaticCheck() {
+    const every = settings.CHECK_INTERVALS[settingsCache.checkSchedule];
+    if (settingsCache.checkSchedule === 'never') return;
+
+    const run = async () => {
+      log('automatic channel check starting');
+      const report = await sweepEngine.sweep(channels.all(), { which: 'unchecked', deep: false });
+      const { state, hidden } = sweepEngine.apply(report, readChannelHealth());
+      writeChannelHealth(state);
+      log(`automatic check: ${report.checked} checked, ${report.uncertain} could not be judged, ${hidden.length} hidden`);
+    };
+
+    if (settingsCache.checkSchedule === 'launch') {
+      // After the launcher is up, so it never competes with the filter parse.
+      setTimeout(run, 4000);
+      return;
+    }
+    if (!every) return;
+    setInterval(run, every).unref?.();
+  }
+
+  ipcMain.handle('settings:get', () => ({
+    settings: settings.all(),
+    defaults: settings.DEFAULTS,
+    genres: channelGenresWithCounts(),
+  }));
+
+  ipcMain.handle('settings:set', (_e, changes = {}) => {
+    settingsCache = settings.set(changes);
+    // Anything already open has to be brought in line with the new settings
+    // rather than waiting for a restart: the page behind the ads and the video
+    // already playing are both mid-session.
+    applySettingsToOpenSite();
+    if (player.isOpen()) player.sendSettings();
+    return { ok: true, settings: settingsCache };
+  });
+
+  ipcMain.handle('settings:reset', () => {
+    settingsCache = settings.reset();
+    applySettingsToOpenSite();
+    return { ok: true, settings: settingsCache };
+  });
+
+  /**
+   * Add or remove a site from the exception list.
+   *
+   * `toggle` rather than add/remove, because that is how the button works and
+   * having the renderer work out which of the two to call would put the list
+   * logic in two places.
+   */
+  ipcMain.handle('settings:toggle-exception', (_e, { host } = {}) => {
+    const name = String(host || '').trim().toLowerCase().replace(/^www\./, '');
+    if (!name) return { ok: false, error: 'no site given' };
+    const current = settings.all().blockingExceptions;
+    const next = current.includes(name)
+      ? current.filter((entry) => entry !== name)
+      : [...current, name];
+    settingsCache = settings.set({ blockingExceptions: next });
+    return { ok: true, settings: settingsCache, exempt: next.includes(name) };
+  });
+
+  ipcMain.handle('debug:resize', async (_e, { width, height } = {}) => {
+    // A real window resize, not a style override on the stage: faking the width
+    // leaves the flex context that actually breaks untouched.
+    if (!mainWindow || mainWindow.isDestroyed()) return { ok: false };
+    mainWindow.setContentSize(Math.max(320, width || 800), Math.max(400, height || 900));
+    return { ok: true, size: mainWindow.getContentSize() };
+  });
 
   ipcMain.handle('debug:health', async () => {
     const list = channels.all();
@@ -1205,7 +1367,7 @@ if (isPrimary) app.whenReady().then(async () => {
   const cdm = await waitForCdm({ log, timeoutMs: 45_000 });
   if (!cdm.available) log(`Widevine unavailable (${cdm.reason}) — playback will use Brave`);
 
-  blocker = new Blocker({ log });
+  blocker = new Blocker({ log, settings: () => settingsCache });
   try {
     await blocker.load();
     const { session } = require('electron');
@@ -1214,6 +1376,13 @@ if (isPrimary) app.whenReady().then(async () => {
   } catch (err) {
     log(`ad blocking failed to load: ${err.message}`);
   }
+
+  // The automatic check, if the viewer asked for one.
+  //
+  // Off by default, and the automatic half that is always on is the one that
+  // costs nothing: a channel that fails while you are watching it is diagnosed
+  // and counted, and nothing is hidden without three separate days behind it.
+  scheduleAutomaticCheck();
 
   // Startup is done: take the loading screen away.
   appReady = true;

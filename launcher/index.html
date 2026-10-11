@@ -81,6 +81,12 @@
             <path d="M12 5v14M5 12h14" />
           </svg>
         </button>
+        <button class="rail-btn" id="rail-settings" title="Settings">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="3.2" />
+            <path d="M12 2.6v2.6M12 18.8v2.6M21.4 12h-2.6M5.2 12H2.6M18.6 5.4l-1.8 1.8M7.2 16.8l-1.8 1.8M18.6 18.6l-1.8-1.8M7.2 7.2 5.4 5.4" />
+          </svg>
+        </button>
       </nav>
 
       <div class="stage">
@@ -334,11 +340,186 @@
       </form>
     </dialog>
 
+    <!-- Settings. Every control here is one somebody asked for with a reason, and
+         the reason is written next to it: a setting whose effect is not obvious
+         from its name gets changed by accident and then blamed. -->
+    <dialog id="settings-dialog" class="editor settings">
+      <form method="dialog" id="settings-form">
+        <h2>Settings</h2>
+
+        <nav class="settings-tabs" id="settings-tabs" role="tablist">
+          <button type="button" class="settings-tab is-active" data-section="channels" role="tab">Channels</button>
+          <button type="button" class="settings-tab" data-section="playback" role="tab">Playback</button>
+          <button type="button" class="settings-tab" data-section="blocking" role="tab">Blocking</button>
+        </nav>
+
+        <div class="settings-body">
+          <!-- ----------------------------- channels ----------------------------- -->
+          <section class="settings-section is-active" data-section="channels">
+            <div class="field">
+              <span>Genres to show</span>
+              <small>
+                Everything is on by default. Four genres hold five channels or fewer, and a
+                heading that costs a whole row to say “Legislative (2)” is clutter — tick one
+                off to drop it from the TV page.
+              </small>
+              <div class="chip-grid" id="settings-genres"></div>
+            </div>
+
+            <label class="field">
+              <span>Check for dead channels</span>
+              <select id="set-check-schedule">
+                <option value="never">Never — only when I ask</option>
+                <option value="weekly">Weekly</option>
+                <option value="launch">Every launch</option>
+              </select>
+              <small>
+                A check is a request per channel. Nothing has ever been deleted by this —
+                a channel is hidden after enough failures in a row, and can be put back — but
+                453 requests on every launch is not something to do to somebody unasked.
+              </small>
+            </label>
+
+            <label class="field">
+              <span>Hide a channel after it fails for</span>
+              <input id="set-dead-days" type="number" min="1" max="365" step="1" />
+              <small>
+                Days in a row, not attempts. Three failures in one evening is a bad network,
+                and a channel lost to a bad Tuesday is one you have to find again by hand.
+              </small>
+            </label>
+
+            <div class="field">
+              <span>Preferred region</span>
+              <small>
+                Leave this empty to show channels from anywhere. Plenty of these are
+                geo-locked, so choosing your countries hides the ones that cannot play —
+                before you spend a minute on them rather than after.
+              </small>
+              <input id="set-region-search" type="search" placeholder="Find a country" autocomplete="off" />
+              <div class="chip-grid" id="settings-region"></div>
+            </div>
+
+            <div class="field">
+              <span>Channels</span>
+              <div class="settings-row">
+                <button type="button" class="btn btn-small" id="settings-check-now">Check channels now&hellip;</button>
+                <button type="button" class="btn btn-small" id="settings-hidden">
+                  Hidden channels&hellip;
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <!-- ----------------------------- playback ----------------------------- -->
+          <section class="settings-section" data-section="playback">
+            <label class="field switch-field">
+              <span>Mute on open</span>
+              <input type="checkbox" id="set-mute" />
+              <small>
+                On by default — a browser will not start sound without a gesture anyway, and
+                a channel making noise the moment you touch the remote is nobody's idea of a
+                television. Any input unmutes.
+              </small>
+            </label>
+
+            <label class="field">
+              <span>Max quality</span>
+              <select id="set-quality">
+                <option value="auto">Auto</option>
+                <option value="1080">1080p</option>
+                <option value="720">720p</option>
+                <option value="480">480p</option>
+              </select>
+              <small>
+                720p is the point where the picture stops getting obviously better and the
+                bandwidth keeps going up. Auto takes whatever the channel offers, which on a
+                slow connection is how a channel becomes a slideshow.
+              </small>
+            </label>
+
+            <label class="field">
+              <span>Audio language</span>
+              <input id="set-audio" type="text" autocomplete="off" placeholder="en" />
+              <small>
+                A preference order, comma separated. Only used when a channel offers a
+                choice — one with a single audio track is left in whatever language it
+                broadcasts, because forcing a language picks nothing and plays silence.
+              </small>
+            </label>
+
+            <label class="field">
+              <span>Subtitles</span>
+              <select id="set-subtitles">
+                <option value="off">Off</option>
+                <option value="auto">When the channel has them</option>
+                <option value="on">On</option>
+              </select>
+              <small>Most of these channels carry none, which is why this is off by default.</small>
+            </label>
+
+            <label class="field">
+              <span>Subtitle size</span>
+              <input id="set-subtitle-size" type="range" min="10" max="72" step="1" />
+              <output id="set-subtitle-size-out"></output>
+            </label>
+          </section>
+
+          <!-- ----------------------------- blocking ----------------------------- -->
+          <section class="settings-section" data-section="blocking">
+            <label class="field switch-field">
+              <span>Ad blocking</span>
+              <input type="checkbox" id="set-blocking" />
+              <small>
+                The whole filter set, about 122,000 rules. This is the app's reason for
+                existing — but it is killable, because an over-filtered page that will not
+                load leaves you no way to tell a broken site from a broken app.
+              </small>
+            </label>
+
+            <label class="field switch-field">
+              <span>Hide in-page ads</span>
+              <input type="checkbox" id="set-cosmetics" />
+              <small>
+                The CSS that removes ad overlays. A different mechanism from blocking
+                requests, and the first thing to turn off if a page will not click properly:
+                it hides elements the page's own scripts still expect to find, so it can take
+                a control away with the ad.
+              </small>
+            </label>
+
+            <div class="field">
+              <span>Don't block on these sites</span>
+              <small>
+                A per-site exception for the one page that will not load with filtering on,
+                without giving up protection everywhere else.
+              </small>
+              <div class="chip-grid" id="settings-exceptions"></div>
+              <div class="settings-row">
+                <input id="set-exception-input" type="text" placeholder="example.com" autocomplete="off" />
+                <button type="button" class="btn btn-small" id="set-exception-add">Add</button>
+              </div>
+              <small id="set-exception-hint">
+                Nothing excepted. Sites appear here as you visit them.
+              </small>
+            </div>
+          </section>
+        </div>
+
+        <div class="editor-actions">
+          <button type="button" id="settings-reset" class="btn btn-ghost">Reset to defaults</button>
+          <span class="spacer"></span>
+          <button type="button" id="settings-close" class="btn btn-ghost">Close</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog id="toast-dialog" class="editor"></dialog>
 
     <div id="toast" class="toast" hidden></div>
 
     <script src="tv.js"></script>
+    <script src="settings.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

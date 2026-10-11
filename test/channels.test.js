@@ -23,6 +23,19 @@ function withStore({ channels = [], health = null }, fn) {
   return Promise.resolve(fn(mod)).finally(() => fs.rmSync(home, { recursive: true, force: true }));
 }
 
+/** The last `n` calendar days, newest first, as health records store them. */
+function lastDays(n) {
+  const keys = [];
+  for (let i = 0; i < n; i += 1) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    keys.push(
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
+    );
+  }
+  return keys;
+}
+
 const CH = {
   name: 'Al Jazeera',
   url: 'https://example.com/a.m3u8',
@@ -55,11 +68,11 @@ test('one failed probe does not hide a channel', () =>
     },
   ));
 
-test('a channel is hidden only after several consecutive failures', () =>
+test('a channel is hidden only after failing for several days running', () =>
   withStore(
     {
       channels: [CH],
-      health: { [CH.url]: { fails: 3, at: 'x', reason: 'not a manifest' } },
+      health: { [CH.url]: { fails: 3, at: 'x', reason: 'not a manifest', days: lastDays(7) } },
     },
     (c) => {
       const [channel] = c.all();
@@ -67,6 +80,48 @@ test('a channel is hidden only after several consecutive failures', () =>
       assert.strictEqual(c.summary().hidden, 1);
       assert.strictEqual(c.available().length, 0);
       assert.strictEqual(c.all().length, 1, 'hidden is not deleted');
+    },
+  ));
+
+test('three failures in one day are still only one day', () =>
+  withStore(
+    {
+      channels: [CH],
+      health: { [CH.url]: { fails: 3, at: 'x', reason: 'gone', days: lastDays(1) } },
+    },
+    (c) => {
+      // The rule that matters. A burst of failures on one evening is a bad
+      // network, and a channel lost to a bad Tuesday has to be found by hand.
+      assert.strictEqual(c.all()[0].dead, false);
+    },
+  ));
+
+test('a gap in the days ends the run', () =>
+  withStore(
+    {
+      channels: [CH],
+      health: {
+        // Five days running, then a gap, then two more. The streak is the two,
+        // not seven: a channel that worked in between has to start earning again.
+        [CH.url]: { fails: 9, at: 'x', reason: 'gone', days: lastDays(2).concat(lastDays(9).slice(5)) },
+      },
+    },
+    (c) => {
+      const [channel] = c.all();
+      assert.strictEqual(channel.streak, 2);
+      assert.strictEqual(channel.dead, false, 'five days, a gap, and two more is not seven running');
+    },
+  ));
+
+test('a channel that worked comes back, however long it had been failing', () =>
+  withStore(
+    {
+      channels: [CH],
+      health: { [CH.url]: { fails: 0, at: 'x', days: lastDays(8) } },
+    },
+    (c) => {
+      assert.strictEqual(c.all()[0].dead, false);
+      assert.strictEqual(c.available().length, 1);
     },
   ));
 

@@ -27,8 +27,101 @@
  * failure would empty the grid over an afternoon.
  */
 
-/** How many consecutive failed probes before a channel stops being offered. */
-const FAILURES_BEFORE_DROP = 3;
+/**
+ * How many days in a row a channel must fail before it stops being offered.
+ *
+ * Days, not attempts, and that is the whole point. Three failed probes on a
+ * Tuesday evening is a bad network; a channel lost to a bad Tuesday is one
+ * somebody has to find again by hand. Counting calendar days means a burst of
+ * failures in one evening costs a channel nothing, and only a stream that is
+ * broken day after day earns its place off the grid.
+ *
+ * Read from settings so it can be changed; this is the fallback used when the
+ * settings module is not in play (the CLI health check, and tests).
+ */
+function deadDays() {
+  try {
+    return require('./settings').get('deadDays');
+  } catch {
+    return DEFAULT_DEAD_DAYS;
+  }
+}
+
+const DEFAULT_DEAD_DAYS = 7;
+
+/**
+ * The calendar day a timestamp falls on.
+ *
+ * Local time, deliberately. "Failed on Tuesday" has to mean the day the viewer
+ * remembers failing on, and UTC would put a late-evening failure on the next day
+ * for anyone east of Greenwich.
+ */
+function dayKey(value) {
+  const when = value instanceof Date ? value : new Date(value || Date.now());
+  if (Number.isNaN(when.getTime())) return null;
+  const y = when.getFullYear();
+  const m = String(when.getMonth() + 1).padStart(2, '0');
+  const d = String(when.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/** The day before a `YYYY-MM-DD` key. */
+function previousDay(key) {
+  const [y, m, d] = key.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  date.setDate(date.getDate() - 1);
+  return dayKey(date);
+}
+
+/**
+ * How many consecutive days, ending today, have a recorded failure.
+ *
+ * Yesterday counts as the end of the run when today has no entry yet, so a
+ * channel that has failed every day for a week is not rescued by a sweep that
+ * has not run yet this morning. Any gap ends the run.
+ */
+function streakDays(days, today = dayKey(new Date())) {
+  if (!Array.isArray(days) || !days.length || !today) return 0;
+  const set = new Set(days);
+
+  let cursor = set.has(today) ? today : previousDay(today);
+  let count = 0;
+  while (cursor && set.has(cursor)) {
+    count += 1;
+    cursor = previousDay(cursor);
+  }
+  return count;
+}
+
+/**
+ * Whether a health record has failed for long enough to be hidden.
+ *
+ * Reads the record's own day list rather than a stored verdict, so a channel
+ * hidden last week comes back on its own once a check finds it working.
+ */
+function isDead(record, threshold = deadDays()) {
+  if (!record) return false;
+  // The current result has to agree with the history. A record whose last check
+  // succeeded is not a channel that is failing, however many days it managed
+  // before that -- and requiring both means a stale day list left behind by an
+  // older version of this file cannot hide anything on its own.
+  if (!record.fails) return false;
+  return streakDays(record.days) >= threshold;
+}
+
+/** The most recent few days a channel has failed on, newest first. */
+function failedDays(record, keep = 60) {
+  if (!record || !Array.isArray(record.days)) return [];
+  return [...new Set(record.days)].sort().reverse().slice(0, keep);
+}
+
+/** Add a counted failure, keeping the record bounded. */
+function noteFailure(record, when = new Date()) {
+  const key = dayKey(when);
+  const days = failedDays(record, 60);
+  if (key && !days.includes(key)) days.unshift(key);
+  return days;
+}
 
 /**
  * How stale a healthy channel's timestamp may get. Long enough that a stream
@@ -132,7 +225,8 @@ function all() {
     const h = health[channel.url];
     channel.fails = h && typeof h.fails === 'number' ? h.fails : 0;
     channel.checked = h && h.at ? h.at : null;
-    channel.dead = channel.fails >= FAILURES_BEFORE_DROP;
+    channel.streak = streakDays(h && h.days);
+    channel.dead = isDead(h);
     out.push(channel);
   }
   return out;
@@ -152,6 +246,7 @@ function recordResult(url, { ok, reason = null }) {
   const state = readJson(paths.channelHealthFile(), {});
   const previous = state[url] || { fails: 0 };
   const at = new Date().toISOString();
+  const threshold = deadDays();
 
   // A live stream fires `playing` again after every stall, and each one would
   // otherwise rewrite the file for no change at all. The timestamp still moves,
@@ -162,21 +257,24 @@ function recordResult(url, { ok, reason = null }) {
   }
 
   if (!ok && !shouldCount(reason)) {
-    // Soft: remembered so the UI can explain it, but the counter does not move.
-    state[url] = { fails: previous.fails || 0, at, reason };
+    // Soft: remembered so the UI can explain it, but the day list does not move.
+    // A timeout must never be able to age a channel off the grid.
+    state[url] = { ...previous, fails: previous.fails || 0, at, reason };
     writeHealth(state);
-    return { counted: false, reason };
+    return { counted: false, reason, streak: streakDays(previous.days) };
   }
 
   const fails = ok ? 0 : (previous.fails || 0) + 1;
-  state[url] = { fails, at, reason: ok ? null : reason };
+  const days = ok ? [] : noteFailure(previous);
+  state[url] = { fails, days, at, reason: ok ? null : reason };
   writeHealth(state);
 
   return {
     counted: !ok,
     reason: ok ? null : reason,
     fails,
-    hidden: fails >= FAILURES_BEFORE_DROP,
+    streak: streakDays(days),
+    hidden: streakDays(days) >= threshold,
   };
 }
 
@@ -205,7 +303,17 @@ function restore(url) {
 /** Hide a channel now, without waiting for the counter. */
 function hide(url) {
   const state = readJson(paths.channelHealthFile(), {});
-  state[url] = { fails: FAILURES_BEFORE_DROP, at: new Date().toISOString(), reason: 'hidden by hand' };
+  // Marked with every day back to the threshold, so a by-hand hide reads the
+  // same way as one earned by failing -- and comes back the same way, on the
+  // first check that finds it working.
+  const threshold = Math.max(1, deadDays());
+  const days = [];
+  for (let i = 0; i < threshold; i += 1) {
+    const date = new Date();
+    date.setDate(date.getDate() - i);
+    days.push(dayKey(date));
+  }
+  state[url] = { fails: threshold, days, at: new Date().toISOString(), reason: 'hidden by hand' };
   writeHealth(state);
 }
 
@@ -394,7 +502,14 @@ module.exports = {
   hide,
   usableUrl,
   normalise,
-  FAILURES_BEFORE_DROP,
+  dayKey,
+  previousDay,
+  streakDays,
+  isDead,
+  failedDays,
+  noteFailure,
+  deadDays,
+  DEFAULT_DEAD_DAYS,
   NEW_GENRE,
   GENRES,
   GENRE_ORDER,

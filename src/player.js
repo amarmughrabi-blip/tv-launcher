@@ -20,6 +20,7 @@
 
 const path = require('node:path');
 const { BrowserWindow, protocol, net } = require('electron');
+const settings = require('./settings');
 
 /** Scheme the player page hands to hls.js in place of a real origin. */
 const SCHEME = 'tv';
@@ -147,6 +148,18 @@ function isOpen() {
   return Boolean(win && !win.isDestroyed());
 }
 
+/**
+ * Hand the page its playback settings.
+ *
+ * Sent when the player opens and again whenever a setting changes, because a
+ * channel already playing should obey the new quality cap rather than finishing
+ * the current programme at the old one.
+ */
+function sendSettings() {
+  if (!isOpen()) return;
+  win.webContents.send('player:settings', settings.all());
+}
+
 /** Tell the page why a channel failed, in words rather than a code. */
 function explain(url, detail) {
   if (!isOpen()) return;
@@ -245,6 +258,7 @@ module.exports = {
   explain,
   setChannels,
   internals,
+  sendSettings,
   isOpen,
   onPageReady,
   toStreamUrl,

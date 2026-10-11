@@ -19,7 +19,7 @@
 
 const { probe, classify } = require('./channel-probe');
 const { shouldCount } = require('./channel-health');
-const { FAILURES_BEFORE_DROP } = require('./channels');
+const { streakDays, noteFailure, deadDays } = require('./channels');
 
 const DEFAULT_CONCURRENCY = 8;
 
@@ -60,16 +60,26 @@ async function sweep(list, options = {}, onProgress) {
 
       const previous = channel.fails || 0;
       const ok = reason === 'ok';
+      const counted = !ok && shouldCount(reason);
+
+      // The same day rule the single-play path uses, so a check and a watch
+      // cannot disagree about whether a channel has earned its place off the grid.
+      const days = counted ? noteFailure({ days: channel.days }) : [];
+      const streak = streakDays(days);
+
       results.set(channel.url, {
         url: channel.url,
         name: channel.name,
         reason,
         ok,
-        counted: !ok && shouldCount(reason),
+        counted,
         previousFails: previous,
         fails: ok ? 0 : previous,
-        wouldHide: !ok && shouldCount(reason) && previous + 1 >= FAILURES_BEFORE_DROP,
-        recovered: ok && previous > 0,
+        days,
+        streak,
+        threshold: deadDays(),
+        wouldHide: counted && streak >= deadDays(),
+        recovered: ok && streakDays(channel.days) > 0,
       });
 
       done += 1;
@@ -105,14 +115,24 @@ function apply(report, health) {
   const at = new Date().toISOString();
   const newlyHidden = [];
 
+  const threshold = deadDays();
   for (const entry of report.results) {
     if (entry.ok) {
-      state[entry.url] = { fails: 0, at, reason: null };
+      state[entry.url] = { fails: 0, days: [], at, reason: null };
       continue;
     }
-    const fails = entry.counted ? entry.fails + 1 : entry.previousFails;
-    state[entry.url] = { fails, at, reason: entry.reason };
-    if (entry.counted && fails >= FAILURES_BEFORE_DROP) newlyHidden.push(entry);
+    // A soft failure keeps whatever run it had. A channel that has genuinely
+    // been failing all week and times out tonight is not thereby healthy, and
+    // clearing its record would be a way for a flaky network to keep a dead
+    // stream on the grid for ever.
+    const days = entry.counted ? entry.days : (state[entry.url] && state[entry.url].days) || [];
+    state[entry.url] = {
+      fails: entry.counted ? entry.fails + 1 : entry.previousFails,
+      days,
+      at,
+      reason: entry.reason,
+    };
+    if (entry.counted && streakDays(days) >= threshold) newlyHidden.push(entry);
   }
 
   // What the caller needs is how many went away, not just the file. A sweep that

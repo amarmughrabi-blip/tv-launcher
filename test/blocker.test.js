@@ -164,3 +164,100 @@ test('cosmetics come from getCosmeticsFilters, not the empty getHtmlFilters buck
   assert.match(code, /getCosmeticsFilters/);
   assert.doesNotMatch(code, /getHtmlFilters/);
 });
+
+/* --------------------------- the switches --------------------------- */
+
+/**
+ * The settings that can turn blocking off.
+ *
+ * The kill switch is the important one. An over-filtered page that will not load
+ * gives the viewer no way to tell a broken site from a broken app, so there has
+ * to be one control that stops all of it -- and it has to stop *everything*,
+ * immediately, rather than the rules that had already been decided.
+ */
+
+function blockingBlocker(overrides = {}) {
+  const b = new Blocker({
+    log: () => {},
+    settings: () => ({ adBlocking: true, hideInPageAds: true, blockingExceptions: [], ...overrides }),
+  });
+  return b;
+}
+
+test('the master switch stops every block, immediately', async () => {
+  const on = blockingBlocker();
+  await on.load();
+  assert.strictEqual(on.decide(req('https://ad.doubleclick.net/ddm/ad.js', 'script')).cancel, true);
+
+  const off = blockingBlocker({ adBlocking: false });
+  await off.load();
+  assert.strictEqual(off.decide(req('https://ad.doubleclick.net/ddm/ad.js', 'script')).cancel, false);
+  // Re-read every call, so flipping the switch does not need a restart.
+  let live = true;
+  const dynamic = new Blocker({ log: () => {}, settings: () => ({ adBlocking: live, hideInPageAds: true, blockingExceptions: [] }) });
+  await dynamic.load();
+  assert.strictEqual(dynamic.decide(req('https://ad.doubleclick.net/ddm/ad.js', 'script')).cancel, true);
+  live = false; // master switch off, mid-session
+  assert.strictEqual(dynamic.decide(req('https://ad.doubleclick.net/ddm/ad.js', 'script')).cancel, false);
+});
+
+test('a per-site exception unblocks that site and no other', async () => {
+  const b = blockingBlocker({ blockingExceptions: ['doubleclick.net'] });
+  await b.load();
+  assert.strictEqual(b.decide(req('https://ad.doubleclick.net/ddm/ad.js', 'script')).cancel, false);
+  assert.strictEqual(
+    b.decide(req('https://www.google-analytics.com/analytics.js', 'script')).cancel,
+    true,
+    'a second site must stay blocked',
+  );
+});
+
+test('an exception covers subdomains, and not a lookalike host', async () => {
+  const b = blockingBlocker({ blockingExceptions: ['google-analytics.com'] });
+  await b.load();
+
+  // Subdomains of an exempted host are exempted.
+  assert.strictEqual(b.decide(req('https://www.google-analytics.com/analytics.js', 'script')).cancel, false);
+
+  // A host that merely ends with the same letters is not. Asserted on the
+  // exemption rather than on the outcome: whether the bundled lists happen to
+  // carry a rule for an invented domain says nothing about exemptions, and
+  // asserting on the outcome would silently test list coverage instead.
+  assert.strictEqual(b.isExempt('notgoogle-analytics.com'), false);
+  assert.strictEqual(b.isExempt('google-analytics.com.evil.net'), false);
+  assert.strictEqual(b.isExempt('google-analytics.com'), true);
+  assert.strictEqual(b.isExempt('www.google-analytics.com'), true);
+
+  // And a genuinely different blocked host is untouched.
+  assert.strictEqual(b.decide(req('https://ad.doubleclick.net/ddm/ad.js', 'script')).cancel, true);
+});
+
+test('element hiding is separately switchable from blocking the network', async () => {
+  const b = blockingBlocker({ hideInPageAds: false });
+  await b.load();
+  assert.strictEqual(
+    b.decide(req('https://ad.doubleclick.net/ddm/ad.js', 'script')).cancel,
+    true,
+    'network blocking is unaffected by the cosmetic switch',
+  );
+  const { styles } = b.cosmeticsFor('https://example.com/');
+  assert.strictEqual(styles, '', 'no CSS is injected when element hiding is off');
+});
+
+test('an exempted site gets no element hiding either', async () => {
+  const b = blockingBlocker({ blockingExceptions: ['example.com'] });
+  await b.load();
+  assert.strictEqual(b.cosmeticsFor('https://example.com/page').styles, '');
+});
+
+test('the summary says whether blocking is on, and counts exemptions apart', async () => {
+  const b = blockingBlocker({ blockingExceptions: ['doubleclick.net'] });
+  await b.load();
+  b.decide(req('https://ad.doubleclick.net/ddm/ad.js', 'script'));
+  b.decide(req('https://www.google-analytics.com/analytics.js', 'script'));
+  const s = b.summary;
+  assert.strictEqual(s.enabled, true);
+  assert.strictEqual(s.exempted, 1);
+  assert.strictEqual(s.blocked, 1);
+  assert.strictEqual(s.allowed, 1);
+});

@@ -33,6 +33,11 @@ const paths = {
    * user's own research file.
    */
   channelHealthFile: () => path.join(dataRoot(), 'channel-health.json'),
+  /**
+   * Settings. Deliberately not in profiles.json: a profile is "whose apps are
+   * these", a setting is "how this launcher behaves", and they get out of step.
+   */
+  settingsFile: () => path.join(dataRoot(), 'settings.json'),
   iconsDir: () => path.join(dataRoot(), 'icons'),
   cacheDir: () => path.join(dataRoot(), 'cache'),
   /** Scratch space for browser state that must not live beside user data. */

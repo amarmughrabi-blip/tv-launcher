@@ -12,9 +12,10 @@
  *
  * Three rules, all deliberate:
  *
- *  - A channel is dropped only after several *consecutive* failures. One failure
- *    is far more likely to be a flaky connection than a channel that has gone,
- *    and dropping on the first would empty the grid over an afternoon.
+ *  - A channel is dropped only after failing on several *days in a row*. One
+ *    failure is far more likely to be a flaky connection than a channel that has
+ *    gone, and three in one evening is a bad network rather than a dead stream --
+ *    so the unit is the calendar day, not the attempt.
  *  - Only *hard* failures count. A timeout, a reset, a 403 from a geo-block or a
  *    5xx say more about this machine than about the channel, and counting them
  *    would hide channels that work perfectly for someone else.
@@ -87,19 +88,21 @@ async function main() {
       const reason = classify(result);
 
       const previous = health[channel.url] || { fails: 0 };
+      const wasDead = channels.isDead(previous);
       if (result.ok) {
-        if (previous.fails > 0) recovered += 1;
-        health[channel.url] = { fails: 0, at, reason: null };
+        if (channels.streakDays(previous.days) > 0) recovered += 1;
+        health[channel.url] = { fails: 0, days: [], at, reason: null };
       } else if (!shouldCount(reason)) {
-        // Recorded so the app can explain it, but the counter does not move.
+        // Recorded so the app can explain it, but the day run does not move. A
+        // channel failing all week that times out tonight is not thereby healthy.
         uncertain += 1;
-        health[channel.url] = { fails: previous.fails || 0, at, reason };
+        health[channel.url] = { ...previous, fails: previous.fails || 0, at, reason };
       } else {
         hardFailed += 1;
-        const fails = (previous.fails || 0) + 1;
-        const wasDead = previous.fails >= channels.FAILURES_BEFORE_DROP;
-        health[channel.url] = { fails, at, reason };
-        if (!wasDead && fails >= channels.FAILURES_BEFORE_DROP) {
+        const days = channels.noteFailure(previous, new Date(at));
+        const record = { fails: (previous.fails || 0) + 1, days, at, reason };
+        health[channel.url] = record;
+        if (!wasDead && channels.isDead(record)) {
           newlyDead += 1;
           wouldHide.push({ name: channel.name, reason });
         }
@@ -134,7 +137,7 @@ async function main() {
   console.log(`could not be judged ${uncertain} (timed out, or blocked here — not counted)`);
   console.log(`written to ${healthPath}`);
   console.log('');
-  console.log(`a channel is hidden after ${channels.FAILURES_BEFORE_DROP} consecutive failures`);
+  console.log(`a channel is hidden after failing on ${channels.deadDays()} days in a row`);
   console.log('--reset forgets the history and starts counting again');
   console.log('--dry-run reports without writing');
   return 0;

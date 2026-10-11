@@ -70,19 +70,36 @@ test('a sweep writes nothing at all', async () => {
   assert.strictEqual(after, before, 'checking must not hide anything on its own');
 });
 
+/** The last `n` calendar days, as health records store them. */
+const dayRun = (n) =>
+  Array.from({ length: n }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    return channels.dayKey(d);
+  });
+
 test('applying only hides what has genuinely gone', () => {
   // The shape a sweep returns: hard failures count, soft ones do not.
   const report = {
     results: [
-      { url: A, name: 'Fine', reason: 'ok', ok: true, counted: false, previousFails: 2, fails: 0 },
-      { url: B, name: 'Gone', reason: 'dns', ok: false, counted: true, previousFails: 2, fails: 2 },
-      { url: C, name: 'Hung', reason: 'timeout', ok: false, counted: false, previousFails: 0, fails: 0 },
+      { url: A, name: 'Fine', reason: 'ok', ok: true, counted: false, previousFails: 2, fails: 0, days: [] },
+      {
+        // The sweep builds `days` itself, including today, so the fixture carries
+        // the whole run rather than the days before it.
+        url: B, name: 'Gone', reason: 'dns', ok: false, counted: true,
+        previousFails: 6, fails: 6, days: dayRun(7),
+      },
+      {
+        url: C, name: 'Hung', reason: 'timeout', ok: false, counted: false,
+        previousFails: 0, fails: 0, days: [],
+      },
     ],
   };
 
   const { state, hidden } = sweep.apply(report, {});
   assert.strictEqual(state[A].fails, 0, 'a channel that answers clears its run');
-  assert.strictEqual(state[B].fails, 3);
+  assert.deepStrictEqual(state[A].days, [], 'and its days are forgotten');
+  assert.strictEqual(state[B].fails, 7);
   assert.strictEqual(hidden.length, 1, 'and it is reported as gone');
   assert.strictEqual(hidden[0].url, B);
   assert.strictEqual(state[C].fails, 0, 'a timeout must not move the counter');
@@ -92,26 +109,51 @@ test('applying only hides what has genuinely gone', () => {
 test('a soft failure does not reset a hard run either', () => {
   const report = {
     results: [
-      { url: B, name: 'Gone', reason: 'timeout', ok: false, counted: false, previousFails: 2, fails: 2 },
+      {
+        url: B, name: 'Gone', reason: 'timeout', ok: false, counted: false,
+        previousFails: 2, fails: 2, days: [],
+      },
     ],
   };
-  const { state } = sweep.apply(report, {});
+  const seeded = { [B]: { fails: 2, days: dayRun(2), at: 'x', reason: 'gone' } };
+  const { state } = sweep.apply(report, seeded);
+  // A channel genuinely failing all week that times out tonight is not thereby
+  // healthy. Clearing its record would let a flaky network keep a dead stream on
+  // the grid for ever.
   assert.strictEqual(state[B].fails, 2);
+  assert.strictEqual(state[B].days.length, 2, 'the run survives the uncertain night');
 });
 
-test('applying twice cannot hide a channel twice', () => {
+test('a channel failing all in one evening is not hidden', () => {
   const report = {
     results: [
-      { url: B, name: 'Gone', reason: 'dns', ok: false, counted: true, previousFails: 2, fails: 2 },
+      {
+        url: B, name: 'Busy Evening', reason: 'dns', ok: false, counted: true,
+        previousFails: 0, fails: 0, days: [channels.dayKey(new Date())],
+      },
     ],
   };
-  sweep.apply(report, {});
-  // Applied twice against the same starting state: both see two previous
-  // failures, so both stop at three. Applying to the result would be the way to
-  // run the counter away, and that is what a second sweep would do -- correctly,
-  // because it re-probed and earned a second failure.
-  const second = sweep.apply(report, {});
-  assert.strictEqual(second.state[B].fails, 3, 'the same report applied twice must not reach 4');
+  const { hidden } = sweep.apply(report, {});
+  assert.strictEqual(hidden.length, 0);
+});
+
+test('applying the same report twice cannot push a channel past the threshold', () => {
+  const report = {
+    results: [
+      {
+        url: B, name: 'Gone', reason: 'dns', ok: false, counted: true,
+        previousFails: 6, fails: 6, days: dayRun(7),
+      },
+    ],
+  };
+  const first = sweep.apply(report, {});
+  assert.strictEqual(first.hidden.length, 1);
+  const second = sweep.apply(report, first.state);
+  assert.strictEqual(
+    channels.streakDays(second.state[B].days),
+    7,
+    'the same seven days applied twice is still seven days, not fourteen',
+  );
 });
 
 /* ---------------------------- the deep probe ---------------------------- */

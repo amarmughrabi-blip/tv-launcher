@@ -50,6 +50,102 @@ let view = 'genres';
 let loadCount = 0;
 let lastError = null;
 let fatalSeen = null;
+
+/** Playback preferences, as last sent by main. */
+let prefs = {
+  muteOnOpen: true,
+  maxQuality: '720',
+  audioLanguage: 'en',
+  subtitles: 'off',
+  subtitleSize: 22,
+};
+
+/** Levels hls.js reports, kept so the cap can be re-applied when they change. */
+let levels = [];
+
+/** The pixel height of each level, used to turn the "720" setting into a level. */
+function heightFor(level) {
+  if (!level || !level.height) return 0;
+  if (Array.isArray(level.height)) return Math.max(...level.height);
+  return Number(level.height) || 0;
+}
+
+/**
+ * The highest level the cap allows.
+ *
+ * hls.js counts levels up from the lowest, so the cap is an index rather than a
+ * height. Picking the lowest index whose height is within the cap is what keeps
+ * a "720p" preference from quietly selecting a 1080p rendition.
+ */
+function cappedIndex() {
+  const cap = Number(prefs.maxQuality);
+  if (!Number.isFinite(cap) || cap <= 0) return -1;
+  let best = -1;
+  for (let i = 0; i < levels.length; i += 1) {
+    const height = heightFor(levels[i]);
+    if (height && height <= cap) best = i;
+  }
+  return best;
+}
+
+function applyQualityCap() {
+  if (!hls) return;
+  const want = cappedIndex();
+  // -1 is hls.js's "no cap", which is also what "auto" means here.
+  hls.autoLevelCapping = want;
+  if (want >= 0 && hls.currentLevel !== want) hls.currentLevel = want;
+}
+
+/**
+ * Pick the audio track.
+ *
+ * Only when the channel offers a choice. A channel with one audio track is left
+ * in whatever language it broadcasts -- forcing "English" onto a stream whose
+ * only audio is Arabic would pick no track at all and play silence.
+ */
+function applyAudioLanguage() {
+  if (!hls || !Array.isArray(hls.audioTracks) || hls.audioTracks.length < 2) return;
+  const wanted = String(prefs.audioLanguage || '')
+    .split(',')
+    .map((code) => code.trim().toLowerCase())
+    .filter(Boolean);
+
+  for (const code of wanted) {
+    const at = hls.audioTracks.findIndex(
+      (track) => String(track.lang || '').toLowerCase().startsWith(code),
+    );
+    if (at >= 0 && at !== hls.audioTrack) {
+      hls.audioTrack = at;
+      return;
+    }
+  }
+}
+
+function applySubtitles() {
+  if (!hls) return;
+  const mode = prefs.subtitles;
+  // 'auto' shows subtitles when the track's own language matches the player
+  // language. Off switches them off whatever they are. On asks for the first
+  // track, and is a no-op on a channel that carries none -- which is most of
+  // them, and is why it is not the default.
+  if (mode === 'off') {
+    hls.subtitleDisplay = false;
+    hls.subtitleTrack = -1;
+    return;
+  }
+  hls.subtitleDisplay = true;
+  if (mode === 'on' && hls.subtitleTrack === -1 && Array.isArray(hls.subtitleTracks) && hls.subtitleTracks.length) {
+    hls.subtitleTrack = 0;
+  }
+  document.documentElement.style.setProperty('--subtitle-size', `${Number(prefs.subtitleSize) || 22}px`);
+}
+
+function applyPrefs() {
+  if (!hls) return;
+  applyQualityCap();
+  applyAudioLanguage();
+  applySubtitles();
+}
 let currentGenre = 'all';
 
 let lastFailed = null;
@@ -151,6 +247,10 @@ function load(payload) {
   }
 
   currentUrl = source || url;
+  // On by default, because a browser will not start unmuted without a gesture
+  // and a channel making noise the moment it is touched is nobody's idea of a
+  // television. Turned off in settings, a channel still needs a first interaction.
+  video.muted = true;
   chromeName.textContent = name || '';
   nowName.textContent = name || '';
   nowRes.textContent = res || '';
@@ -170,6 +270,24 @@ function load(payload) {
         xhr.withCredentials = false;
       },
     });
+
+    hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
+      levels = hls.levels || [];
+      applyPrefs();
+    });
+    hls.on(window.Hls.Events.LEVEL_SWITCHED, (_event, data) => {
+      levels = hls.levels || [];
+      // The cap is re-checked rather than trusted: a channel that only reveals a
+      // lower rendition after the first segment would otherwise stay on the
+      // highest one it offered at startup.
+      const cap = Number(prefs.maxQuality);
+      if (Number.isFinite(cap) && cap > 0 && heightFor(levels[data.level]) > cap) {
+        const want = cappedIndex();
+        if (want >= 0 && hls.currentLevel !== want) hls.currentLevel = want;
+      }
+    });
+    hls.on(window.Hls.Events.AUDIO_TRACKS_UPDATED, applyAudioLanguage);
+    hls.on(window.Hls.Events.SUBTITLE_TRACKS_UPDATED, applySubtitles);
 
     hls.on(window.Hls.Events.ERROR, (_event, data) => {
       if (token !== loadToken) return;
@@ -447,6 +565,29 @@ function step(direction) {
 }
 
 video.addEventListener('click', unmute);
+
+/**
+ * Playback preferences arriving from main.
+ *
+ * Applied to the live stream, not just the next one: a quality cap that only
+ * took effect on the next channel would leave the current one playing at the old
+ * setting, which is the opposite of what "apply now" means to somebody who just
+ * changed it.
+ */
+window.player.onSettings((value) => {
+  if (!value) return;
+  const wasMuted = video.muted;
+  prefs = { ...prefs, ...value };
+
+  // Muting on open only governs what happens when a channel starts. Somebody
+  // already unmuting a channel must not be silenced by a setting they did not
+  // just touch.
+  if (prefs.muteOnOpen && !video.currentTime) video.muted = true;
+  else if (!prefs.muteOnOpen && wasMuted) video.muted = false;
+
+  applyPrefs();
+  wake();
+});
 
 window.player.onLoad(load);
 window.player.onChannels((data) => buildList(data));

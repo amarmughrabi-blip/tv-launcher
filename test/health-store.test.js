@@ -52,12 +52,33 @@ test('a hard failure moves the channel one step closer to being hidden', () => {
   assert.strictEqual(first.hidden, false);
 });
 
-test('three consecutive hard failures hide the channel', () => {
-  channels.recordResult(URL_B, { ok: false, reason: 'dns' });
-  const second = channels.recordResult(URL_B, { ok: false, reason: 'dns' });
-  assert.strictEqual(second.hidden, false);
-  const third = channels.recordResult(URL_B, { ok: false, reason: 'dns' });
-  assert.strictEqual(third.hidden, true);
+test('failing all in one evening does not hide the channel', () => {
+  // Three failures, all on the same day. That is a bad network, not a dead
+  // channel, and the day-based rule is what stops it costing anything.
+  for (let i = 0; i < 3; i += 1) {
+    const outcome = channels.recordResult(URL_B, { ok: false, reason: 'dns' });
+    assert.strictEqual(outcome.hidden, false);
+  }
+  assert.strictEqual(channels.findByUrl(URL_B).fails, 3, 'the attempts are still counted');
+  assert.strictEqual(channels.findByUrl(URL_B).streak, 1, 'but it is one day');
+  assert.strictEqual(channels.findByUrl(URL_B).dead, false);
+});
+
+test('enough days in a row hides the channel', () => {
+  // Seeded with a run of days rather than a run of attempts: the only way to
+  // test a day-based rule without waiting a week is to write the history.
+  const state = channels.readHealth();
+  state[URL_B] = {
+    fails: 7,
+    days: Array.from({ length: 7 }, (_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      return channels.dayKey(d);
+    }),
+    at: new Date().toISOString(),
+    reason: 'dns',
+  };
+  channels.writeHealth(state);
 
   assert.strictEqual(channels.findByUrl(URL_B).dead, true);
   assert.ok(!channels.available().some((c) => c.url === URL_B));
@@ -99,7 +120,18 @@ test('a soft failure does not reset a hard run', () => {
 });
 
 test('restore brings a hidden channel back and clears its history', () => {
-  channels.recordResult(URL_B, { ok: false, reason: 'dns' });
+  const state = channels.readHealth();
+  state[URL_B] = {
+    fails: 9,
+    days: Array.from({ length: 9 }, (_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      return channels.dayKey(d);
+    }),
+    at: new Date().toISOString(),
+    reason: 'dns',
+  };
+  channels.writeHealth(state);
   assert.strictEqual(channels.findByUrl(URL_B).dead, true);
 
   channels.restore(URL_B);

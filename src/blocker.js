@@ -14,15 +14,30 @@
  */
 
 const { FiltersEngine, Request, fullLists } = require('@ghostery/adblocker');
+const settingsStore = require('./settings');
 
 /** Electron request types that are never blocked. */
 const NEVER_BLOCK_TYPES = new Set(['mainFrame']);
 
 class Blocker {
-  constructor({ log = () => {} } = {}) {
+  constructor({ log = () => {}, settings = null } = {}) {
     this.engine = null;
     this.log = log;
-    this.stats = { blocked: 0, allowed: 0 };
+    // Read through a function rather than captured once: the settings screen can
+    // be opened at any time, and a snapshot taken at boot would leave the master
+    // switch doing nothing until the next launch.
+    //
+    // The default returns the defaults rather than reading the file, because this
+    // runs once per network request and re-reading and re-parsing settings on
+    // every request to a page would be absurd. Main passes a cached getter that
+    // it refreshes whenever the settings change.
+    this.settings = settings || (() => settingsStore.DEFAULTS);
+    this.stats = { blocked: 0, allowed: 0, exempted: 0 };
+  }
+
+  /** Whether anything should be blocked at all right now. */
+  get enabled() {
+    return this.settings().adBlocking !== false;
   }
 
   /**
@@ -66,6 +81,28 @@ class Blocker {
    */
   decide(request) {
     if (!this.engine) return { cancel: false, matched: null };
+
+    // The master switch. Checked before anything else so that turning blocking
+    // off is immediate and complete -- not "off except for the rules that were
+    // already decided", which is how a kill switch that does not kill arrives.
+    if (!this.enabled) {
+      this.stats.allowed += 1;
+      return { cancel: false, matched: null };
+    }
+
+    // A per-site exception is the escape hatch for the one page that will not
+    // load with filtering on. Checked on the top-level document's host so it
+    // covers the whole site, and counted separately so "blocking is on but this
+    // site is exempt" is visible in the totals rather than looking like a leak.
+    // `hostname` is a property on Request, not a method -- calling it as one
+    // throws on every single request, which takes out all blocking rather than
+    // just the exemption.
+    if (this.isExempt(request && request.hostname)) {
+      this.stats.exempted += 1;
+      this.stats.allowed += 1;
+      return { cancel: false, matched: null };
+    }
+
     if (request && NEVER_BLOCK_TYPES.has(request.type)) {
       // Never blocked, and counted as allowed so the totals mean
       // "requests that got through" rather than "requests the engine saw".
@@ -87,6 +124,12 @@ class Blocker {
 
     this.stats.blocked += 1;
     return { cancel: true, matched: response.match === true ? 'filter' : String(response.match) };
+  }
+
+  /** Whether this host has been exempted by the viewer. */
+  isExempt(hostname) {
+    if (!hostname) return false;
+    return settingsStore.isExempt(hostname, this.settings());
   }
 
   /** Build a matchable request from Electron's onBeforeRequest details. */
@@ -128,12 +171,19 @@ class Blocker {
    */
   cosmeticsFor(url) {
     if (!this.engine) return { styles: '', scripts: [] };
+    // Separately switchable from the master switch, and the first thing to turn
+    // off when a page will not click properly. A network block removes a
+    // request; a cosmetic rule hides an element the page's own scripts still
+    // expect to find, so over-hiding can take a control away with the ad.
+    if (!this.settings().hideInPageAds) return { styles: '', scripts: [] };
+
     let parsed;
     try {
       parsed = new URL(url);
     } catch {
       return { styles: '', scripts: [] };
     }
+    if (this.isExempt(parsed.hostname)) return { styles: '', scripts: [] };
     try {
       const result = this.engine.getCosmeticsFilters({
         url,
@@ -148,7 +198,7 @@ class Blocker {
   }
 
   get summary() {
-    return { ...this.stats };
+    return { ...this.stats, enabled: this.enabled, ready: this.ready };
   }
 }
 

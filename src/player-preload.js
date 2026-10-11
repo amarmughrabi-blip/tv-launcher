@@ -20,6 +20,9 @@ contextBridge.exposeInMainWorld('player', {
   report: (payload) => ipcRenderer.send('player:report', payload),
   closeSelf: () => ipcRenderer.invoke('player:close'),
 
+  /** Playback preferences: mute, quality cap, audio language, subtitles. */
+  onSettings: (fn) => ipcRenderer.on('player:settings', (_e, value) => fn(value)),
+
   /**
    * Health, all of it routed through main.
    *
