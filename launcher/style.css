@@ -27,6 +27,7 @@
   --scrim: rgba(6, 7, 11, 0.82);
   --chrome-bg: rgba(10, 12, 17, 0.7);
   --toast-bg: rgba(20, 24, 34, 0.96);
+  --ambient: #0c0f16;
   /* Driven from the focused tile so the room's colour follows your selection. */
   --glow-hue: 218;
   --ease: cubic-bezier(0.22, 0.9, 0.24, 1);
@@ -58,6 +59,7 @@
   --scrim: rgba(244, 246, 250, 0.86);
   --chrome-bg: rgba(255, 255, 255, 0.82);
   --toast-bg: rgba(255, 255, 255, 0.97);
+  --ambient: #ffffff;
   color-scheme: light;
 }
 
@@ -83,6 +85,7 @@
     --scrim: rgba(244, 246, 250, 0.86);
     --chrome-bg: rgba(255, 255, 255, 0.82);
     --toast-bg: rgba(255, 255, 255, 0.97);
+    --ambient: #ffffff;
     color-scheme: light;
   }
 }
@@ -127,7 +130,7 @@ body::before {
   background:
     radial-gradient(900px 520px at 26% -6%, hsl(var(--glow-hue) 72% 46% / 0.2), transparent 66%),
     radial-gradient(800px 480px at 88% 112%, hsl(calc(var(--glow-hue) + 40) 66% 42% / 0.16), transparent 64%),
-    radial-gradient(1200px 720px at 52% 40%, #0c0f16 0%, var(--bg) 72%);
+    radial-gradient(1200px 720px at 52% 40%, var(--ambient) 0%, var(--bg) 72%);
   transition: background 0.75s var(--ease);
 }
 
@@ -400,7 +403,7 @@ body::before {
   gap: 34px;
   padding: 40px;
   background:
-    radial-gradient(900px 520px at 50% 0%, #131826 0%, var(--bg) 70%),
+    radial-gradient(900px 520px at 50% 0%, var(--ambient) 0%, var(--bg) 70%),
     var(--bg);
 }
 
@@ -745,7 +748,7 @@ body::before {
   z-index: 8;
   border: 1px solid var(--surface-5);
   border-radius: 18px;
-  background: #121620;
+  background: var(--surface);
   color: var(--text);
   padding: 24px;
   width: min(440px, 92vw);
@@ -778,7 +781,7 @@ body::before {
 
 .field input {
   width: 100%;
-  background: #0b0e15;
+  background: var(--surface-2);
   border: 1px solid var(--surface-5);
   border-radius: 10px;
   color: var(--text);

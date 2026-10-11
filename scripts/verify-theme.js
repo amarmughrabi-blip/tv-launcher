@@ -59,9 +59,33 @@ function brightness(colour) {
   await wait(900);
   if (!field('settings-dialog').open) return fail('the settings screen did not open');
 
-  // The theme tab is the first thing anybody looks for, so it has to be there.
+  // Channels first. It is what the screen was opened for, and Theme being the
+  // landing tab pushes the thing you came for one click away.
+  const shownTab = [...document.querySelectorAll('.settings-section')]
+    .filter((s) => s.classList.contains('is-active'))
+    .map((s) => s.dataset.section);
+  if (shownTab.length !== 1 || shownTab[0] !== 'channels') {
+    return fail(`the settings screen opens on ${shownTab.join(',') || 'nothing'}, not channels`);
+  }
+  out.push('ok   the settings screen opens on Channels');
+
   const tabs = [...document.querySelectorAll('.settings-tab')].map((t) => t.dataset.section);
   if (!tabs.includes('theme')) return fail('there is no theme section');
+
+  /* ---------------- the dialog itself has to follow the theme -------------- */
+
+  // This is the one that was missed. The page background, the text and the open
+  // list were all checked and all followed the theme, while the settings dialog
+  // itself stayed black throughout -- because .editor and .field input carried
+  // hardcoded dark colours that no variable ever reached. A theme that only
+  // half-applies looks worse than no theme at all.
+  const dialog = field('settings-dialog');
+  const darkDialog = brightness(getComputedStyle(dialog).backgroundColor);
+  const darkInput = brightness(getComputedStyle(field('set-region-search')).backgroundColor);
+  if (darkDialog === null || darkDialog > 90) {
+    return fail(`the settings dialog is not dark in the dark theme (${Math.round(darkDialog || 0)})`);
+  }
+  out.push(`ok   the dialog and its inputs are dark to begin with (${Math.round(darkDialog)})`);
 
   /* --------------------------- switching to light ------------------------- */
 
@@ -78,6 +102,26 @@ function brightness(colour) {
     return fail(`light theme is not light (brightness ${Math.round(lightBg || 0)})`);
   }
   out.push(`ok   light is light (brightness ${Math.round(lightBg)}, was ${Math.round(darkBg)})`);
+
+  const lightDialog = brightness(getComputedStyle(dialog).backgroundColor);
+  const lightInput = brightness(getComputedStyle(field('set-region-search')).backgroundColor);
+  if (lightDialog === null || lightDialog < 140) {
+    return fail(
+      `the settings dialog did not follow the theme -- still dark at brightness ` +
+        `${Math.round(lightDialog || 0)} in a light theme`,
+    );
+  }
+  if (lightInput === null || lightInput < 140) {
+    return fail(`the dialog's inputs did not follow the theme (${Math.round(lightInput || 0)})`);
+  }
+  out.push(`ok   the dialog and its inputs follow it too (${Math.round(darkDialog)} -> ${Math.round(lightDialog)})`);
+
+  // The backdrop, which is drawn behind the dialog and is just as visible.
+  const backdrop = getComputedStyle(dialog, '::backdrop').backgroundColor;
+  if (backdrop === 'rgba(0, 0, 0, 0)' || backdrop === undefined) {
+    return fail('the dialog backdrop has no colour');
+  }
+  out.push('ok   and the backdrop is drawn');
 
   // And back, so the setting is a two-way street.
   themeSelect.value = 'dark';
