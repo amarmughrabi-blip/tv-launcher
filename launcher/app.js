@@ -394,6 +394,20 @@ bridge.isAppReady().then((ready) => {
   if (ready && boot) boot.hidden = true;
 });
 
+/*
+ * A loading screen that cannot be dismissed is the worst possible failure: the
+ * app looks broken, and the one thing that could fix it -- restarting -- is the
+ * thing the screen is asking for. Main sends app:ready as soon as the window is
+ * usable, but if that message is ever lost the screen would sit there for ever,
+ * so it gives up on its own.
+ */
+setTimeout(() => {
+  if (boot && !boot.hidden) {
+    boot.hidden = true;
+    console.warn('loading screen gave up waiting for the app');
+  }
+}, 8000);
+
 bridge.onChromeVisible((visible) => {
   el.bar.classList.toggle('bar-hidden', !visible);
 });

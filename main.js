@@ -108,6 +108,19 @@ let cosmeticsKey = null;
  */
 let appReady = false;
 
+/**
+ * How long startup actually took, measured here rather than in the renderer.
+ *
+ * The renderer cannot measure it: the verification script is injected once the
+ * app has settled, by which point the loading screen has long since gone. Asking
+ * the page "was the loading screen up?" afterwards always answers no, however
+ * long it was -- which is how a check that could catch a 45-second hang ends up
+ * passing on the build that has one.
+ */
+const bootStartedAt = Date.now();
+let bootReadyMs = null;
+let blockerReadyMs = null;
+
 ipcMain.handle('app:ready-state', () => appReady);
 
 let popupsAttempted = 0;
@@ -569,7 +582,25 @@ ipcMain.on('site:control', (_e, { action } = {}) => {
   // why the controls used to open and close on their own.
 });
 
-ipcMain.handle('site:open', (_e, { url }) => openSite(url));
+ipcMain.handle('site:open', async (_e, { url }) => {
+  // The parse happens off the startup path, so a site opened right after launch
+  // could otherwise load unprotected. This waits for the engine -- briefly, and
+  // with a bound -- rather than assuming it is there. From cache this is well
+  // under a tenth of a second; on the very first run it is the four-second parse,
+  // which is the one time paying for it is the right trade.
+  if (blocker && !blocker.ready) {
+    const ready = await blocker.ensureReady(15_000);
+    if (!ready) log(`site opened without blocking ready: ${url}`);
+    if (ready && blocker.attached !== true) {
+      try {
+        blocker.attach(require('electron').session.fromPartition(SITE_PARTITION));
+      } catch (err) {
+        log(`could not attach blocking: ${err.message}`);
+      }
+    }
+  }
+  return openSite(url);
+});
 
 /* --- live TV ---------------------------------------------------------------- */
 
@@ -907,6 +938,12 @@ if (process.env.TVL_DEBUG_INPUT === '1') {
   // happened, and a check that opens no page would see zero for a setting that
   // is working perfectly -- so the answer has to come from the same place the
   // request pipeline would ask it.
+  ipcMain.handle('debug:boot-time', () => ({
+    usableMs: bootReadyMs,
+    blockingMs: blockerReadyMs,
+    ready: appReady,
+  }));
+
   ipcMain.handle('debug:exempt', (_e, { host } = {}) =>
     blocker ? Boolean(blocker.isExempt(host)) : false);
 
@@ -996,69 +1033,6 @@ if (process.env.TVL_DEBUG_INPUT === '1') {
   });
 
   ipcMain.handle('debug:player-internals', async () => player.internals());
-
-  /**
-   * Bring an already-open page in line with settings that just changed.
-   *
-   * The site behind the settings screen is the one thing most likely to be
-   * affected, and it is already loaded -- so waiting for the next navigation would
-   * mean "turn element hiding off" appears to do nothing until you navigated away.
-   */
-  function applySettingsToOpenSite() {
-    if (!siteView || siteView.isDestroyed()) return;
-    if (!blocker || !blocker.ready) return;
-    const url = siteView.webContents.getURL();
-    if (!url || !url.startsWith('http')) return;
-
-    if (!settingsCache.hideInPageAds) {
-      if (!cosmeticsKey) return;
-      siteView.webContents.removeCSS(cosmeticsKey).catch(() => {});
-      cosmeticsKey = null;
-      lastCosmeticsChars = 0;
-      log(`element hiding off for ${url.slice(0, 60)}`);
-      return;
-    }
-
-    // Turning it on (or leaving it on) needs the sheet present now.
-    const { styles } = blocker.cosmeticsFor(url);
-    if (!styles || cosmeticsKey) return;
-    siteView.webContents
-      .insertCSS(styles)
-      .then((key) => {
-        cosmeticsKey = key;
-        lastCosmeticsChars = styles.length;
-      })
-      .catch(() => {});
-  }
-
-  /**
-   * Run a check now or never, per the setting.
-   *
-   * Deliberately not run in the background at startup: the filter parse is the
-   * slowest thing this app does, and stacking 453 requests on top of it would
-   * make the launcher feel slow for a screen the viewer may never open. A 'launch'
-   * check waits until the launcher is actually up.
-   */
-  function scheduleAutomaticCheck() {
-    const every = settings.CHECK_INTERVALS[settingsCache.checkSchedule];
-    if (settingsCache.checkSchedule === 'never') return;
-
-    const run = async () => {
-      log('automatic channel check starting');
-      const report = await sweepEngine.sweep(channels.all(), { which: 'unchecked', deep: false });
-      const { state, hidden } = sweepEngine.apply(report, readChannelHealth());
-      writeChannelHealth(state);
-      log(`automatic check: ${report.checked} checked, ${report.uncertain} could not be judged, ${hidden.length} hidden`);
-    };
-
-    if (settingsCache.checkSchedule === 'launch') {
-      // After the launcher is up, so it never competes with the filter parse.
-      setTimeout(run, 4000);
-      return;
-    }
-    if (!every) return;
-    setInterval(run, every).unref?.();
-  }
 
   ipcMain.handle('settings:get', () => ({
     settings: settings.all(),
@@ -1336,6 +1310,70 @@ app.on('second-instance', () => {
   mainWindow.focus();
 });
 
+  /**
+   * Bring an already-open page in line with settings that just changed.
+   *
+   * The site behind the settings screen is the one thing most likely to be
+   * affected, and it is already loaded -- so waiting for the next navigation would
+   * mean "turn element hiding off" appears to do nothing until you navigated away.
+   */
+  function applySettingsToOpenSite() {
+    if (!siteView || siteView.isDestroyed()) return;
+    if (!blocker || !blocker.ready) return;
+    const url = siteView.webContents.getURL();
+    if (!url || !url.startsWith('http')) return;
+
+    if (!settingsCache.hideInPageAds) {
+      if (!cosmeticsKey) return;
+      siteView.webContents.removeCSS(cosmeticsKey).catch(() => {});
+      cosmeticsKey = null;
+      lastCosmeticsChars = 0;
+      log(`element hiding off for ${url.slice(0, 60)}`);
+      return;
+    }
+
+    // Turning it on (or leaving it on) needs the sheet present now.
+    const { styles } = blocker.cosmeticsFor(url);
+    if (!styles || cosmeticsKey) return;
+    siteView.webContents
+      .insertCSS(styles)
+      .then((key) => {
+        cosmeticsKey = key;
+        lastCosmeticsChars = styles.length;
+      })
+      .catch(() => {});
+  }
+
+  /**
+   * Run a check now or never, per the setting.
+   *
+   * Deliberately not run in the background at startup: the filter parse is the
+   * slowest thing this app does, and stacking 453 requests on top of it would
+   * make the launcher feel slow for a screen the viewer may never open. A 'launch'
+   * check waits until the launcher is actually up.
+   */
+  function scheduleAutomaticCheck() {
+    const every = settings.CHECK_INTERVALS[settingsCache.checkSchedule];
+    if (settingsCache.checkSchedule === 'never') return;
+
+    const run = async () => {
+      log('automatic channel check starting');
+      const report = await sweepEngine.sweep(channels.all(), { which: 'unchecked', deep: false });
+      const { state, hidden } = sweepEngine.apply(report, readChannelHealth());
+      writeChannelHealth(state);
+      log(`automatic check: ${report.checked} checked, ${report.uncertain} could not be judged, ${hidden.length} hidden`);
+    };
+
+    if (settingsCache.checkSchedule === 'launch') {
+      // After the launcher is up, so it never competes with the filter parse.
+      setTimeout(run, 4000);
+      return;
+    }
+    if (!every) return;
+    setInterval(run, every).unref?.();
+  }
+
+
 if (isPrimary) app.whenReady().then(async () => {
   paths.ensure();
   favicons.pruneCache();
@@ -1355,34 +1393,53 @@ if (isPrimary) app.whenReady().then(async () => {
   maybeCapture(mainWindow);
 
   /*
-   * Let the loading screen paint before doing anything slow.
+   * Let the loading screen paint, then get out of the way.
    *
-   * Parsing the filter lists blocks the main process outright for several
-   * seconds, and it happens whether or not this window has been painted. A
-   * couple of event-loop turns first means the user is looking at something that
-   * says what is happening rather than at a window that has stopped responding.
+   * The launcher is usable the moment its window is up. Nothing below this line
+   * is a reason to keep somebody looking at a loading screen:
+   *
+   *  - Widevine can take the best part of a minute to resolve, and its own
+   *    module calls it non-fatal: a missing CDM means no protected video, not no
+   *    launcher. Awaiting it here is what left the app sitting on the loading
+   *    screen for the whole wait.
+   *  - Parsing the filter lists blocks the main process outright. It used to
+   *    hold the loading screen for its full four seconds, during which the window
+   *    was also unresponsive, so the screen said "Loading ad blocking" and the app
+   *    was neither loading nor accepting anything.
+   *
+   * Both now happen behind a launcher that is already up. Blocking is ready in
+   * well under a tenth of a second from cache; opening a site waits for it
+   * explicitly, so nothing is left unprotected.
    */
   const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
   await settle();
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('boot:note', 'Loading ad blocking');
-  }
-  await settle();
 
-  // Non-fatal: a missing CDM does not stop the launcher, it only means no site
-  // will ever play protected video here.
-  const cdm = await waitForCdm({ log, timeoutMs: 45_000 });
-  if (!cdm.available) log(`Widevine unavailable (${cdm.reason}) — playback will use Brave`);
+  appReady = true;
+  bootReadyMs = Date.now() - bootStartedAt;
+  log(`launcher usable after ${bootReadyMs}ms`);
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('app:ready');
+
+  // Widevine, in the background, with a bound. Nobody is waiting on it.
+  waitForCdm({ log, timeoutMs: 30_000 })
+    .then((cdm) => {
+      if (cdm.available) log('Widevine ready — protected playback is available');
+      else log(`Widevine unavailable (${cdm.reason}) — playback will use Brave`);
+    })
+    .catch((err) => log(`Widevine check failed: ${err.message}`));
 
   blocker = new Blocker({ log, settings: () => settingsCache });
-  try {
-    await blocker.load();
-    const { session } = require('electron');
-    blocker.attach(session.fromPartition(SITE_PARTITION));
-    log('ad blocking active on the site session');
-  } catch (err) {
-    log(`ad blocking failed to load: ${err.message}`);
-  }
+  blocker
+    .load()
+    .then(() => {
+      const { session } = require('electron');
+      blocker.attach(session.fromPartition(SITE_PARTITION));
+      blockerReadyMs = Date.now() - bootStartedAt;
+      log(`ad blocking active on the site session (${blockerReadyMs}ms after start)`);
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('blocker:ready');
+    })
+    .catch((err) => {
+      log(`ad blocking failed to load: ${err.message}`);
+    });
 
   // The automatic check, if the viewer asked for one.
   //
@@ -1390,10 +1447,6 @@ if (isPrimary) app.whenReady().then(async () => {
   // costs nothing: a channel that fails while you are watching it is diagnosed
   // and counted, and nothing is hidden without three separate days behind it.
   scheduleAutomaticCheck();
-
-  // Startup is done: take the loading screen away.
-  appReady = true;
-  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('app:ready');
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow();

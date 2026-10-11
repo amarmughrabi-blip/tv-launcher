@@ -4,6 +4,9 @@ const test = require('node:test');
 const assert = require('node:assert');
 const { FiltersEngine, Request } = require('@ghostery/adblocker');
 const { Blocker } = require('../src/blocker');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 /** Build a request the way Electron hands them to onBeforeRequest. */
 function req(url, type = 'other') {
@@ -260,4 +263,124 @@ test('the summary says whether blocking is on, and counts exemptions apart', asy
   assert.strictEqual(s.exempted, 1);
   assert.strictEqual(s.blocked, 1);
   assert.strictEqual(s.allowed, 1);
+});
+
+/* ------------------------------ the cache ------------------------------ */
+
+/**
+ * The engine is cached between launches.
+ *
+ * Parsing takes about four seconds and blocks the main process for the whole of
+ * it; reading the serialised form back takes a fraction of that. So the cache is
+ * the difference between a launcher that is up immediately and one that sits on
+ * a loading screen -- which is why it is worth being this careful about.
+ *
+ * The failure it must not have is quietly fewer rules than a fresh parse: every
+ * ad that comes back is one the viewer sees.
+ */
+
+function withCacheHome(fn) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tv-blocker-cache-'));
+  const previous = process.env.XDG_DATA_HOME;
+  process.env.XDG_DATA_HOME = home;
+  return Promise.resolve(fn(home))
+    .finally(() => {
+      if (previous === undefined) delete process.env.XDG_DATA_HOME;
+      else process.env.XDG_DATA_HOME = previous;
+      fs.rmSync(home, { recursive: true, force: true });
+    });
+}
+
+test('the engine is cached and restored, with every rule intact', async () => {
+  await withCacheHome(async (home) => {
+    const first = new Blocker({ log: () => {}, settings: () => ({ adBlocking: true, hideInPageAds: true, blockingExceptions: [] }) });
+    await first.load();
+
+    const cacheDir = path.join(home, 'adblock-launcher', 'cache');
+    assert.ok(
+      fs.existsSync(path.join(cacheDir, 'blocker-engine.bin')),
+      'the first run must leave a cache behind',
+    );
+
+    const second = new Blocker({ log: () => {}, settings: () => ({ adBlocking: true, hideInPageAds: true, blockingExceptions: [] }) });
+    await second.load();
+
+    const a = first.engine.getFilters();
+    const b = second.engine.getFilters();
+    assert.strictEqual(b.networkFilters.length, a.networkFilters.length, 'fewer network filters after a round trip');
+    assert.strictEqual(b.cosmeticFilters.length, a.cosmeticFilters.length, 'fewer cosmetic rules after a round trip');
+
+    // The restored engine has to actually work, not merely exist.
+    assert.strictEqual(
+      second.decide(req('https://ad.doubleclick.net/ddm/ad.js', 'script')).cancel,
+      true,
+      'a restored engine that does not block is worse than no engine',
+    );
+  });
+});
+
+test('a cache from a different build is thrown away rather than trusted', async () => {
+  await withCacheHome(async (home) => {
+    const b = new Blocker({ log: () => {}, settings: () => ({ adBlocking: true, hideInPageAds: true, blockingExceptions: [] }) });
+    await b.load();
+    const stampPath = path.join(home, 'adblock-launcher', 'cache', 'blocker-engine.stamp');
+    fs.writeFileSync(stampPath, '0.0.0-someone-elses-build\n');
+
+    const messages = [];
+    const c = new Blocker({
+      log: (m) => messages.push(m),
+      settings: () => ({ adBlocking: true, hideInPageAds: true, blockingExceptions: [] }),
+    });
+    await c.load();
+    assert.ok(
+      messages.some((m) => /different build/.test(m)),
+      'a stale cache must be rebuilt, not used',
+    );
+    assert.ok(c.ready);
+  });
+});
+
+test('a corrupt cache falls back to parsing instead of failing', async () => {
+  await withCacheHome(async (home) => {
+    const cacheDir = path.join(home, 'adblock-launcher', 'cache');
+    fs.mkdirSync(cacheDir, { recursive: true });
+    fs.writeFileSync(path.join(cacheDir, 'blocker-engine.bin'), 'not a serialised engine');
+    fs.writeFileSync(path.join(cacheDir, 'blocker-engine.stamp'), 'x\n');
+
+    const b = new Blocker({ log: () => {}, settings: () => ({ adBlocking: true, hideInPageAds: true, blockingExceptions: [] }) });
+    await b.load();
+    assert.ok(b.ready, 'a bad cache must not stop the app having any blocking at all');
+  });
+});
+
+test('several callers asking at once share one parse', async () => {
+  await withCacheHome(async () => {
+    const b = new Blocker({ log: () => {}, settings: () => ({ adBlocking: true, hideInPageAds: true, blockingExceptions: [] }) });
+    const started = Date.now();
+    // Opening a site during a cold start asks for the engine while startup is
+    // still asking for it. Without sharing, that is a second four-second parse
+    // on top of the first.
+    await Promise.all([b.load(), b.load(), b.load()]);
+    assert.ok(b.ready);
+    assert.strictEqual(b.loading !== null, true, 'the shared load must be recorded');
+    assert.ok(Date.now() - started < 30_000, 'sanity: it did finish');
+    assert.strictEqual(
+      b.decide(req('https://ad.doubleclick.net/ddm/ad.js', 'script')).cancel,
+      true,
+      'and the engine it settled on still blocks',
+    );
+  });
+});
+
+test('ensureReady gives up rather than waiting for ever', async () => {
+  await withCacheHome(async () => {
+    const b = new Blocker({ log: () => {}, settings: () => ({ adBlocking: true, hideInPageAds: true, blockingExceptions: [] }) });
+    // A load that never settles: the whole point of taking the parse off the
+    // startup path is that nothing is left waiting on it without an end.
+    b.loading = new Promise(() => {});
+    const started = Date.now();
+    const ready = await b.ensureReady(200);
+    assert.strictEqual(ready, false);
+    assert.ok(Date.now() - started < 2000, 'it waited past its own limit');
+  });
 });
