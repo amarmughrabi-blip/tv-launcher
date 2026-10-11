@@ -746,15 +746,21 @@ if (process.env.TVL_DEBUG_INPUT === '1') {
     const w = playerWindowRef();
     return w.webContents.executeJavaScript(`(() => {
       const list = document.getElementById('channels');
-      const rows = list.querySelectorAll('.ch');
+      const genresSlide = document.getElementById('slide-genres');
+      const channelsSlide = document.getElementById('slide-channels');
       const back = document.getElementById('back').getBoundingClientRect();
       return JSON.stringify({
-        listRows: rows.length,
+        genreRows: genresSlide.querySelectorAll('.ch-genre').length,
+        channelRows: channelsSlide.querySelectorAll('.ch[data-url]').length,
+        genresHidden: genresSlide.hidden,
+        channelsHidden: channelsSlide.hidden,
+        slideTitle: document.getElementById('slide-title').textContent,
         listOpen: !list.hidden,
         listLeft: Math.round(list.getBoundingClientRect().left),
         backLeft: Math.round(back.left), backTop: Math.round(back.top),
-        current: (list.querySelector('.ch.is-current')||{}).textContent || null,
+        current: (channelsSlide.querySelector('.ch.is-current')||{}).textContent || null,
         idle: document.getElementById('chrome').classList.contains('is-idle'),
+        cursorHidden: getComputedStyle(document.body).cursor === 'none',
       });
     })()`).catch((e) => ({ open: true, err: e.message }));
   });
@@ -783,6 +789,19 @@ if (process.env.TVL_DEBUG_INPUT === '1') {
     visible: Boolean(mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()),
     focused: Boolean(mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()),
   }));
+
+  ipcMain.handle('debug:player-pick-genre', async (_e, { genre } = {}) => {
+    if (!player.isOpen()) return { ok: false };
+    const w = playerWindowRef();
+    return w.webContents
+      .executeJavaScript(`(() => {
+        const row = document.querySelector('.ch-genre[data-genre="${String(genre)}"]');
+        if (!row) return 'no such genre';
+        row.click();
+        return 'clicked';
+      })()`)
+      .catch((err) => ({ ok: false, err: err.message }));
+  });
 
   ipcMain.handle('debug:popups', () => ({ attempted: popupsAttempted }));
 

@@ -30,11 +30,18 @@
         </div>
 
         <!--
-          The channel list, down the left. Switch without leaving: the whole
-          point of a TV is that you can change your mind mid-programme.
+          Two slides, not one long list. Picking a genre first keeps 453
+          channels from being scrolled past to find the handful wanted.
         -->
         <div class="channels" id="channels">
-          <div class="channels-inner" id="channels-inner"></div>
+          <div class="slide" id="slide-genres"></div>
+          <div class="slide" id="slide-channels" hidden>
+            <button class="slide-back" id="slide-back" aria-label="Back to genres">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
+              <span id="slide-title">genres</span>
+            </button>
+            <div class="channels-inner" id="channels-inner"></div>
+          </div>
         </div>
       </div>
 

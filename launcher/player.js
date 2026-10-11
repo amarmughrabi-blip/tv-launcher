@@ -7,9 +7,14 @@
  * and a launcher has no gesture to give. Any input unmutes, so the video starts
  * immediately and the sound follows when the viewer is actually there.
  *
- * The chrome (back, the list toggle, the channel list) hides when the remote is
- * idle and returns on any input. It sits over the picture, so leaving it up for
- * a whole film would spoil the thing it is meant to help with.
+ * The chrome -- back, the list toggle, and the list itself -- hides when the
+ * remote is idle and returns on any input, taking the cursor with it. It sits
+ * over the picture, so leaving it up for a whole film would spoil the thing it
+ * is meant to help with.
+ *
+ * The list is two slides rather than one long scroll: genres first, then the
+ * channels of the chosen genre. Scrolling 453 entries to reach the handful
+ * someone wanted is the wrong shape for a TV.
  */
 
 const video = document.getElementById('video');
@@ -22,9 +27,12 @@ const nowRes = document.getElementById('now-res');
 const chrome = document.getElementById('chrome');
 const chromeName = document.getElementById('chrome-name');
 const channels = document.getElementById('channels');
-const channelsInner = document.getElementById('channels-inner');
 const toggle = document.getElementById('toggle');
 const back = document.getElementById('back');
+const slideGenres = document.getElementById('slide-genres');
+const slideChannels = document.getElementById('slide-channels');
+const slideTitle = document.getElementById('slide-title');
+const slideBack = document.getElementById('slide-back');
 
 /** How long the chrome waits before getting out of the way. */
 const IDLE_MS = 4000;
@@ -34,7 +42,9 @@ let hls = null;
 let loadToken = 0;
 let idleTimer = null;
 let currentUrl = null;
-let list = [];
+let grouped = [];
+let view = 'genres';
+let currentGenre = 'all';
 
 function showProblem(title, detail) {
   problemTitle.textContent = title;
@@ -56,7 +66,6 @@ function destroyHls() {
   hls = null;
 }
 
-/** Fatal errors are worth reporting; recoverable ones are not worth a banner. */
 const FATAL = new Set([
   'networkError',
   'networkManifestLoadError',
@@ -94,8 +103,6 @@ function load(payload) {
       enableWorker: true,
       lowLatencyMode: true,
       xhrSetup: (xhr) => {
-        // Broadcast CDNs are not fastidious about referrers, and a stream that
-        // 403s on a referrer check is not worth the risk of sending one.
         xhr.withCredentials = false;
       },
     });
@@ -119,79 +126,155 @@ function load(payload) {
 }
 
 video.addEventListener('playing', clearProblem);
-
 video.addEventListener('error', () => {
   const code = video.error && video.error.code;
   if (code === 3 || code === 4) showProblem('This channel is not playing', 'the stream was refused');
 });
 
-/* ---------------- the channel list ---------------- */
+/* ---------------- slides ---------------- */
+
+function entriesFor(genre) {
+  if (genre === 'all') return grouped.flatMap((g) => g.channels);
+  const found = grouped.find((g) => g.genre === genre);
+  return found ? found.channels : [];
+}
+
+function channelRow(channel) {
+  const item = document.createElement('button');
+  item.className = 'ch';
+  item.type = 'button';
+  item.dataset.url = channel.url;
+
+  const name = document.createElement('span');
+  name.className = 'ch-name';
+  name.textContent = channel.name;
+  item.appendChild(name);
+
+  if (channel.country) {
+    const country = document.createElement('span');
+    country.className = 'ch-country';
+    country.textContent = channel.country;
+    item.appendChild(country);
+  }
+
+  item.addEventListener('click', () => {
+    window.player.switchChannel(channel.url);
+    wake();
+  });
+  return item;
+}
+
+function genreRow(genre, label, count) {
+  const item = document.createElement('button');
+  item.className = 'ch ch-genre';
+  item.type = 'button';
+  item.dataset.genre = genre;
+
+  const name = document.createElement('span');
+  name.className = 'ch-name';
+  name.textContent = label;
+  item.appendChild(name);
+
+  const n = document.createElement('span');
+  n.className = 'ch-country';
+  n.textContent = String(count);
+  item.appendChild(n);
+
+  item.addEventListener('click', () => {
+    showChannels(genre);
+    wake();
+  });
+  return item;
+}
+
+function buildGenres() {
+  slideGenres.replaceChildren();
+  const all = entriesFor('all').length;
+  slideGenres.appendChild(genreRow('all', 'All channels', all));
+  for (const { genre, channels: entries } of grouped) {
+    slideGenres.appendChild(genreRow(genre, genre, entries.length));
+  }
+}
+
+function buildChannels(genre) {
+  const inner = document.getElementById('channels-inner');
+  inner.replaceChildren();
+  const entries = entriesFor(genre);
+  for (const channel of entries) inner.appendChild(channelRow(channel));
+  slideTitle.textContent = genre === 'all' ? 'All channels' : genre;
+  markCurrent();
+}
+
+/**
+ * Which slide is shown is carried by `hidden`, not by a transition reaching its
+ * end: an unfocused window can have its animations throttled, and a half-finished
+ * slide would leave both lists painted or neither.
+ */
+function showSlide(next) {
+  view = next;
+  const genresShown = view === 'genres';
+  slideGenres.hidden = !genresShown;
+  slideChannels.hidden = genresShown;
+  slideGenres.classList.toggle('is-from-right', !genresShown);
+  slideChannels.classList.toggle('is-from-right', genresShown);
+}
+
+function showChannels(genre) {
+  currentGenre = genre || 'all';
+  buildChannels(currentGenre);
+  showSlide('channels');
+  markCurrent();
+}
+
+function showGenres() {
+  showSlide('genres');
+}
+
+slideBack.addEventListener('click', () => {
+  showGenres();
+  wake();
+});
 
 function markCurrent() {
-  for (const node of channelsInner.querySelectorAll('.ch')) {
+  for (const node of document.querySelectorAll('.ch[data-url]')) {
     const on = node.dataset.url === currentUrl;
     node.classList.toggle('is-current', on);
-    if (on) {
-      // Keep the playing channel in view when switching from the list.
-      const box = node.offsetTop - channelsInner.clientHeight / 2;
-      channelsInner.scrollTop = Math.max(0, box);
+    if (on && view === 'channels') {
+      const inner = document.getElementById('channels-inner');
+      inner.scrollTop = Math.max(0, node.offsetTop - inner.clientHeight / 2);
     }
   }
 }
+
+function buildList(data) {
+  grouped = data || [];
+  buildGenres();
+  buildChannels(currentGenre);
+  showSlide('genres');
+}
+
+/* ---------------- chrome behaviour ---------------- */
 
 function setListOpen(open) {
   channels.hidden = !open;
   toggle.setAttribute('aria-expanded', String(open));
   toggle.title = open ? 'Hide channels' : 'Show channels';
   toggle.setAttribute('aria-label', toggle.title);
-  if (open) markCurrent();
-}
-
-function buildList(grouped) {
-  list = grouped || [];
-  channelsInner.replaceChildren();
-
-  for (const { genre, channels: entries } of list) {
-    const heading = document.createElement('p');
-    heading.className = 'ch-group';
-    heading.textContent = `${genre} · ${entries.length}`;
-    channelsInner.appendChild(heading);
-
-    for (const channel of entries) {
-      const item = document.createElement('button');
-      item.className = 'ch';
-      item.type = 'button';
-      item.dataset.url = channel.url;
-
-      const name = document.createElement('span');
-      name.className = 'ch-name';
-      name.textContent = channel.name;
-
-      item.appendChild(name);
-      if (channel.country) {
-        const country = document.createElement('span');
-        country.className = 'ch-country';
-        country.textContent = channel.country;
-        item.appendChild(country);
-      }
-
-      item.addEventListener('click', () => {
-        window.player.switchChannel(channel.url);
-        wake();
-      });
-      channelsInner.appendChild(item);
-    }
+  if (open) {
+    showGenres();
+    markCurrent();
   }
-  markCurrent();
 }
-
-/* ---------------- chrome behaviour ---------------- */
 
 function wake() {
   chrome.classList.remove('is-idle');
+  // The cursor comes back with the controls. Leaving it hidden over the picture
+  // makes the player look switched off and hides where the pointer is.
+  document.body.classList.remove('is-idle');
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
     chrome.classList.add('is-idle');
+    document.body.classList.add('is-idle');
   }, IDLE_MS);
 }
 
@@ -202,8 +285,6 @@ toggle.addEventListener('click', () => {
 
 back.addEventListener('click', () => window.player.closeSelf());
 
-// The pointer over the video itself also brings the chrome back, so a viewer
-// waving the mouse does not have to find the buttons first.
 video.addEventListener('mousemove', wake);
 
 function unmute() {
@@ -215,11 +296,17 @@ function unmute() {
 
 window.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
-    // Chrome first, then out. Closing straight from fullscreen skips a step
-    // people expect from every other player.
     event.preventDefault();
+    // Back through the slides first, then out. Closing straight away from the
+    // channels slide skips a step people expect.
+    if (!chrome.classList.contains('is-idle') && view === 'channels') {
+      showGenres();
+      wake();
+      return;
+    }
     if (!chrome.classList.contains('is-idle')) {
       chrome.classList.add('is-idle');
+      document.body.classList.add('is-idle');
       setListOpen(false);
       return;
     }
@@ -250,16 +337,28 @@ window.addEventListener('keydown', (event) => {
   }
 });
 
-/** Move through the list with the arrow keys, the way a remote does. */
+/** Move with the arrow keys over whatever slide is showing. */
 function step(direction) {
   setListOpen(true);
-  const items = [...channelsInner.querySelectorAll('.ch')];
+  const selector = view === 'genres' ? '.ch-genre' : '.ch[data-url]';
+  const items = [...document.querySelectorAll(selector)];
   if (!items.length) return;
+
+  if (view === 'genres') {
+    const at = items.findIndex((n) => n.dataset.genre === currentGenre);
+    const next = items[Math.min(items.length - 1, Math.max(0, at + direction))] || items[0];
+    if (direction > 0) {
+      showChannels(next.dataset.genre);
+      return;
+    }
+    next.focus({ preventScroll: true });
+    next.scrollIntoView({ block: 'nearest' });
+    return;
+  }
+
   const at = items.findIndex((n) => n.classList.contains('is-current'));
   const next = items[Math.min(items.length - 1, Math.max(0, at + direction))] || items[0];
-  if (next !== items[at]) {
-    window.player.switchChannel(next.dataset.url);
-  }
+  if (next !== items[at]) window.player.switchChannel(next.dataset.url);
   next.focus({ preventScroll: true });
   next.scrollIntoView({ block: 'nearest' });
 }
@@ -267,6 +366,6 @@ function step(direction) {
 video.addEventListener('click', unmute);
 
 window.player.onLoad(load);
-window.player.onChannels((grouped) => buildList(grouped));
+window.player.onChannels((data) => buildList(data));
 window.player.report({ ready: true });
 wake();

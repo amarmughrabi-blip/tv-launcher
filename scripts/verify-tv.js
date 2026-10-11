@@ -101,10 +101,12 @@ const fail = (msg) => `FAIL ${msg} | ${out.join(' | ')}`;
   );
 
   // --- the controls over the video ------------------------------------------
-  // Both at the top left, as asked, with the channel list down the left so you
-  // can change your mind without leaving.
+  // Two slides down the left -- genres, then that genre's channels -- rather
+  // than one long scroll past 453 entries to find the handful wanted.
   const ui = JSON.parse(await bridge.debugPlayerUI());
-  if (!ui.listRows) return fail('the channel list is empty in the player');
+  if (!(ui.genreRows > 1)) return fail(`the genre slide is empty (${ui.genreRows} rows)`);
+  if (ui.genresHidden) return fail('the genre slide is not showing');
+  if (!ui.channelsHidden) return fail('both slides are painted at once');
   if (!(ui.backLeft < 200)) {
     return fail(`Back is not on the left (left edge at ${ui.backLeft}px)`);
   }
@@ -112,22 +114,49 @@ const fail = (msg) => `FAIL ${msg} | ${out.join(' | ')}`;
     return fail(`the channel list is not down the left (left edge at ${ui.listLeft}px)`);
   }
   if (!ui.current || !ui.current.toLowerCase().includes(targetName.toLowerCase().split(' ')[0])) {
-    return fail(`the playing channel is not marked in the list (current=${ui.current})`);
+    return fail(`the playing channel is not marked (current=${ui.current})`);
   }
   out.push(
-    `ok   Back and a ${ui.listRows}-channel list on the left, playing one marked`,
+    `ok   Back top left, ${ui.genreRows} genres then channels, playing one marked`,
   );
 
-  // The toggle hides and shows the list.
+  // --- the cursor belongs to the chrome -------------------------------------
+  // It used to be hidden unconditionally, which made the player look switched
+  // off and hid where the pointer actually was.
+  if (!ui.idle || !ui.cursorHidden) {
+    return fail(`the cursor should hide while idle (idle=${ui.idle}, hidden=${ui.cursorHidden})`);
+  }
+  // The toggle is what brings them back, and it has to hide the list as well as
+  // show it -- both halves are the same button.
   await bridge.debugPlayerToggle();
   await wait(500);
-  const hidden = JSON.parse(await bridge.debugPlayerUI());
-  if (hidden.listOpen) return fail('the toggle did not hide the channel list');
+  const away = JSON.parse(await bridge.debugPlayerUI());
+  if (away.listOpen) return fail('the toggle did not hide the channel list');
+
   await bridge.debugPlayerToggle();
   await wait(500);
-  const shown = JSON.parse(await bridge.debugPlayerUI());
-  if (!shown.listOpen) return fail('the toggle did not bring the channel list back');
-  out.push('ok   the toggle hides and shows the channel list');
+  const awake = JSON.parse(await bridge.debugPlayerUI());
+  if (awake.idle || awake.cursorHidden) {
+    return fail('the cursor did not come back when the controls did');
+  }
+  if (!awake.listOpen) return fail('the toggle did not bring the channel list back');
+  out.push('ok   the toggle hides and shows the list, and the cursor returns with it');
+
+
+  // --- choosing a genre slides to its channels ------------------------------
+  await bridge.debugPlayerPickGenre('news');
+  await wait(700);
+  const inGenre = JSON.parse(await bridge.debugPlayerUI());
+  if (!inGenre.genresHidden || inGenre.channelsHidden) {
+    return fail('choosing a genre did not move to the channels slide');
+  }
+  if (inGenre.slideTitle !== 'news') {
+    return fail(`the channels slide is not showing the genre (title=${inGenre.slideTitle})`);
+  }
+  if (!(inGenre.channelRows > 0 && inGenre.channelRows < ui.channelRows)) {
+    return fail(`choosing a genre did not narrow the list (${inGenre.channelRows})`);
+  }
+  out.push(`ok   a genre slides to its own channels (${inGenre.channelRows})`);
 
   // --- and it closes --------------------------------------------------------
   // Closing has to bring the launcher back, not just take the player away. The
