@@ -22,7 +22,7 @@ modules:
         - --share=network
       append-path: /usr/lib/sdk/node22/bin
     build-commands:
-      - ./scripts/setup-ecs.sh
+      - sh -c 'set -e; mkdir -p vendor/ecs-dist; curl -fL -o ecs.zip https://github.com/castlabs/electron-releases/releases/download/v44.5.1+wvcus/electron-v44.5.1+wvcus-linux-x64.zip; unzip -q ecs.zip -d vendor/ecs-dist; rm ecs.zip; npm install --omit=dev --no-audit --no-fund'
       - mkdir -p /app/lib/tv-launcher
       - cp -r main.js package.json launcher src node_modules vendor /app/lib/tv-launcher/
       - install -Dm755 tv-launcher.sh /app/bin/tv-launcher
