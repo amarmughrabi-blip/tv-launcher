@@ -81,64 +81,6 @@ body::before {
   pointer-events: none;
 }
 
-/*
- * Over a site the bar stops spanning the window. It becomes a compact pair of
- * controls floating in the top-right of the strip the site view leaves
- * uncovered -- it cannot be a true overlay, because the site is a child view
- * and always paints above this page.
- */
-.bar-site {
-  position: absolute;
-  inset: 7px 14px auto auto;
-  height: auto;
-  width: auto;
-  padding: 6px;
-  gap: 6px;
-  border-radius: 999px;
-  background: rgba(8, 10, 14, 0.86);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.5);
-  overflow: visible;
-}
-
-/* The actions sit beside Back rather than pushed to the far edge. */
-.bar-site .bar-actions {
-  margin-left: 0;
-}
-
-/* Smaller controls: this pair is an escape hatch, not the main interface. */
-.bar-site .btn {
-  padding: 5px 11px;
-  font-size: 13px;
-  line-height: 1.3;
-  background: rgba(255, 255, 255, 0.07);
-}
-
-.bar-site #back {
-  background: transparent;
-}
-
-/* Just the two controls; the page title only widened the pill. */
-.bar-site .site-title {
-  display: none;
-}
-
-/* Icon-only button, sized to match the text buttons beside it. */
-.btn-icon {
-  display: grid;
-  place-items: center;
-  padding: 5px 9px;
-}
-
-.btn-icon svg {
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-}
-
 .search {
   width: 250px;
   background: rgba(255, 255, 255, 0.05);

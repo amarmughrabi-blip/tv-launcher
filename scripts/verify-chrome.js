@@ -106,55 +106,96 @@ async function ensureSites() {
   }
   out.push('ok   bar returns when the pointer nears the top');
 
-  // The bar has to be genuinely on screen, not merely marked visible: the
-  // reveal animation drives both the bar's offset and the view's bounds from
-  // the main process, and those used to be able to disagree.
-  const backTop = Math.round(document.getElementById('back').getBoundingClientRect().top);
-  if (!(backTop >= 0 && backTop < 60)) {
-    return fail(`Back is not reachable after reveal (top=${backTop}px)`);
-  }
-  // The site is a child view and paints above this page, so the controls are
-  // only visible if the site view leaves their strip uncovered. With the inset
-  // removed they were correctly positioned and completely invisible -- every
-  // geometry check still passed, which is how that reached a release.
+  // The controls live in the page, not in this window, so they have to be
+  // inspected there. Asserting geometry in the launcher proved nothing: an
+  // earlier version placed them perfectly and the site view painted straight
+  // over the top, and every check here still passed.
+  const readControls = () =>
+    bridge.debugSiteEval(`(() => {
+      const host = document.getElementById('__tvl-controls-host');
+      if (!host || !host.shadowRoot) return JSON.stringify({ installed: false });
+      const sr = host.shadowRoot;
+      const pill = sr.querySelector('.pill');
+      const r = host.getBoundingClientRect();
+      const back = sr.getElementById('b').getBoundingClientRect();
+      const brave = sr.getElementById('w').getBoundingClientRect();
+      const cs = getComputedStyle(host);
+      return JSON.stringify({
+        installed: true,
+        expanded: pill.getAttribute('data-expanded'),
+        w: Math.round(r.width), h: Math.round(r.height),
+        left: Math.round(r.left), top: Math.round(r.top), right: Math.round(r.right),
+        backW: Math.round(back.width), braveW: Math.round(brave.width),
+        position: cs.position, z: cs.zIndex,
+        toggle: sr.getElementById('t').getAttribute('aria-label'),
+      });
+    })()`).then((raw) => JSON.parse(raw));
+
+  const controls = await readControls();
+  if (!controls.installed) return fail('the controls were never injected into the page');
   if (!afterMove || afterMove.chromeOffset !== 0) {
     return fail(`revealing the controls did not take effect (${JSON.stringify(afterMove)})`);
   }
-  const strip = document.getElementById('bar').getBoundingClientRect();
-  if (!(afterMove.viewTop >= strip.bottom - 1)) {
-    return fail(
-      `the site view covers the controls (view starts at ${afterMove.viewTop}px, ` +
-        `controls end at ${Math.round(strip.bottom)}px) — they would be invisible`,
-    );
-  }
-  out.push('ok   Back is on screen and the site view leaves the controls uncovered');
 
-  // Over a site the bar is a small floating pair, not a strip across the window.
-  // It only covers a fraction of the page, and nothing is left behind when it
-  // goes -- the point of the change, so it is asserted rather than assumed.
-  const compact = document.getElementById('bar').getBoundingClientRect();
-  const coverage = (compact.width * compact.height) / (window.innerWidth * window.innerHeight);
-  if (compact.width > window.innerWidth * 0.5) {
-    return fail(`the controls still span the window (${Math.round(compact.width)}px wide)`);
+  // The whole point: the page keeps its space. The controls float above it.
+  if (afterMove.viewTop !== 0) {
+    return fail(`the site is inset by ${afterMove.viewTop}px — it should never be pushed down`);
   }
+
+  // Fixed and above everything, or the site paints over it.
+  if (controls.position !== 'fixed') return fail(`the controls are ${controls.position}, not fixed`);
+  if (Number(controls.z) < 2000000) return fail(`the controls have z-index ${controls.z}, too low to sit above the site`);
+
+  // Revealed state: the pair is showing and reachable.
+  if (controls.expanded !== 'true') {
+    return fail(`the controls did not expand on reveal (state=${controls.expanded})`);
+  }
+  if (!(controls.backW > 20) || !(controls.braveW > 10)) {
+    return fail(`the pair is not shown (Back ${controls.backW}px, Brave ${controls.braveW}px)`);
+  }
+  if (!(controls.top >= 0 && controls.top < 60)) {
+    return fail(`the controls are not near the top (top=${controls.top}px)`);
+  }
+  out.push('ok   Back and Open in Brave are shown above the page after reveal');
+
+  // Top right, as asked, and a small fraction of the window.
+  if (controls.right < window.innerWidth * 0.5) {
+    return fail(`the controls are not on the right (right edge at ${controls.right}px)`);
+  }
+  const coverage = (controls.w * controls.h) / (window.innerWidth * window.innerHeight);
   if (coverage > 0.06) {
     return fail(`the controls cover ${(coverage * 100).toFixed(1)}% of the window`);
   }
-  // Top right, as asked, and clear of the rail on the left.
-  if (compact.right < window.innerWidth * 0.5) {
-    return fail(`the controls are not on the right (right edge at ${Math.round(compact.right)}px)`);
-  }
-  const visible = [...document.querySelectorAll('#bar button')].filter((b) => b.offsetParent !== null);
-  if (visible.length !== 2) {
-    return fail(`expected exactly Back and Open in Brave over a site, saw ${visible.length}`);
-  }
-  const stray = [...document.querySelectorAll('#bar .site-title')].filter(
-    (n) => getComputedStyle(n).display !== 'none',
-  );
-  if (stray.length) return fail('the page title is still in the floating controls');
   out.push(
-    `ok   controls are a compact pair (${Math.round(compact.width)}x${Math.round(compact.height)}, ${(coverage * 100).toFixed(1)}% of the window)`,
+    `ok   controls are a compact pair in the top right (${controls.w}x${controls.h}, ${(coverage * 100).toFixed(1)}% of the window)`,
   );
+
+  // The toggle must actually work: collapsed by default, and it puts the pair
+  // away again without closing the site.
+  await bridge.debugSiteEval(
+    `document.getElementById('__tvl-controls-host').shadowRoot.getElementById('t').click(); 'clicked'`,
+  );
+  await wait(600);
+  const collapsed = await readControls();
+  if (collapsed.expanded !== 'false') {
+    return fail(`the toggle did not collapse the controls (state=${collapsed.expanded})`);
+  }
+  if (!(collapsed.backW === 0 && collapsed.braveW === 0)) {
+    return fail(
+      `the collapsed pair still takes space (Back ${collapsed.backW}px, Brave ${collapsed.braveW}px) ` +
+        '— it would block clicks on the page',
+    );
+  }
+  if (collapsed.w >= controls.w) {
+    return fail(`collapsing did not shrink the controls (${controls.w}px -> ${collapsed.w}px)`);
+  }
+  out.push(`ok   the toggle shows and hides them (${controls.w}px -> ${collapsed.w}px)`);
+
+  // Leave them expanded for the rest of the check.
+  await bridge.debugSiteEval(
+    `document.getElementById('__tvl-controls-host').shadowRoot.getElementById('t').click(); 'clicked'`,
+  );
+  await wait(600);
 
   // Every visible control has to be fully inside the bar and inside the window.
   // A label that wraps in a narrow window used to grow the row past the bar's

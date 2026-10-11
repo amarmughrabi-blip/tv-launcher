@@ -20,6 +20,7 @@ const fs = require('node:fs');
 const { app, BrowserWindow, WebContentsView, ipcMain, protocol, net, shell, webContents } = require('electron');
 
 const { GUARD: POPUNDER_GUARD } = require('./src/popunder-guard');
+const { CONTROLS_SCRIPT } = require('./src/site-controls');
 const store = require('./src/store');
 const icons = require('./src/icons');
 const favicons = require('./src/favicons');
@@ -87,13 +88,6 @@ let popupsOpenedExternally = 0;
  */
 const CHROME_TRAVEL_PX = 56;
 
-/**
- * Height of the strip the site view leaves uncovered so the controls are
- * visible at all. Must cover the pill (`.bar-site`) plus its margin; see
- * launcher/style.css.
- */
-const CHROME_STRIP_PX = 52;
-
 let mainWindow = null;
 let siteView = null;
 let blocker = null;
@@ -121,31 +115,42 @@ const BOUNDS_ANIM_MS = 280;
 /**
  * Space the site view must leave at the top for the shared controls.
  *
- * This cannot be zero. The site is a WebContentsView added as a child of the
- * window, and a child view always paints above the window's own page, so
- * anything drawn there is behind the site and cannot be seen or clicked. The
- * controls only float *within* this strip; they are not a separate overlay.
- *
- * Removing this inset is what made the controls vanish entirely, while every
- * geometry check still passed, because they were correctly positioned and
- * simply covered.
+ * None. The controls are injected into the page itself (src/site-controls.js),
+ * so they sit above it without the site having to give up any space. The site
+ * keeps the whole window and never moves when they appear.
  */
 function chromeInset() {
-  return chromeVisible ? CHROME_STRIP_PX : 0;
+  return 0;
+}
+
+/**
+ * Tell the injected controls whether to show the pair.
+ *
+ * Driven from here rather than from the page, so the auto-hide and the manual
+ * toggle cannot disagree: there is one state and both paths write to it.
+ */
+function pushControlsState() {
+  if (!siteView || siteView.webContents.isDestroyed()) return;
+  siteView.webContents
+    .executeJavaScript(`window.__tvlSetControls && window.__tvlSetControls(${Boolean(chromeVisible)})`)
+    .catch(() => {});
 }
 
 function showChrome({ schedule = true } = {}) {
+  // The controls are their own window now, so revealing means expanding them.
   if (chromeVisible) {
     // Already up, but the geometry still has to agree with that: returning early
     // without re-applying left the bar off-screen while main believed it was
     // visible.
     trackViewBounds();
+    pushControlsState();
     if (schedule) scheduleHideChrome();
     return;
   }
   chromeVisible = true;
   sendToLauncher('chrome:visible', true);
   trackViewBounds();
+  pushControlsState();
   cancelHideChrome();
   if (schedule) scheduleHideChrome();
 }
@@ -155,6 +160,7 @@ function hideChrome() {
   chromeVisible = false;
   sendToLauncher('chrome:visible', false);
   trackViewBounds();
+  pushControlsState();
 }
 
 /**
@@ -356,8 +362,7 @@ function openSite(url) {
     if (input.type !== 'keyDown') return;
     if (input.key === 'Escape' || (input.key === 'Backspace' && !input.control)) {
       event.preventDefault();
-      destroySiteView();
-      sendToLauncher('site:closed');
+      closeSite();
     }
   });
 
@@ -378,6 +383,15 @@ function openSite(url) {
       await view.webContents.executeJavaScript(POPUNDER_GUARD);
     } catch (err) {
       log(`pop-under guard not armed: ${err.message}`);
+    }
+
+    // (Re)install the controls. A navigation replaces the page's DOM, so these
+    // have to go in again for every document.
+    try {
+      await view.webContents.executeJavaScript(CONTROLS_SCRIPT);
+      pushControlsState();
+    } catch (err) {
+      log(`site controls not installed: ${err.message}`);
     }
 
     if (!blocker || !blocker.ready) return;
@@ -409,6 +423,7 @@ function openSite(url) {
   view.webContents.on('page-title-updated', (_e, title) => {
     if (siteView === view) sendToLauncher('site:opened', { url, title });
   });
+
   return { ok: true, url };
 }
 
@@ -494,12 +509,52 @@ ipcMain.handle('favicon:get', async (_e, { url }) => {
 
 ipcMain.on('site:pointer', (_e, { y } = {}) => handleSitePointer(Number(y) || 0));
 
+/*
+ * Clicks from the controls injected into the page. They arrive as a CustomEvent
+ * on `document`, forwarded by the site's preload, because injected script runs
+ * in the page's world and cannot reach ipcRenderer itself.
+ *
+ * 'toggle' flips the pair and holds it open until the user dismisses it, so a
+ * deliberate toggle is not undone by the auto-hide a moment later.
+ */
+ipcMain.on('site:control', (_e, { action } = {}) => {
+  if (!siteView) return;
+  if (action === 'back') {
+    destroySiteView();
+    sendToLauncher('site:closed');
+    return;
+  }
+  if (action === 'brave') {
+    const current = siteView.webContents.getURL();
+    if (current) brave.open(current, { dataRoot: paths.appDir(), log });
+    return;
+  }
+  if (action === 'toggle') {
+    if (chromeVisible) {
+      cancelHideChrome();
+      chromeVisible = false;
+      sendToLauncher('chrome:visible', false);
+      trackViewBounds();
+      pushControlsState();
+    } else {
+      // Held open: auto-hide would take it away again immediately.
+      showChrome({ schedule: false });
+    }
+  }
+});
+
 ipcMain.handle('site:open', (_e, { url }) => openSite(url));
 ipcMain.handle('site:back', () => {
-  destroySiteView();
-  sendToLauncher('site:closed');
+  closeSite();
   return { ok: true };
 });
+
+/** Leave the site, from the launcher, the injected controls, or a remote. */
+function closeSite() {
+  destroySiteView();
+  sendToLauncher('site:closed');
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.focus();
+}
 ipcMain.handle('site:current', () => {
   if (!siteView || siteView.webContents.isDestroyed()) return null;
   return {
@@ -527,8 +582,7 @@ app.on('web-contents-created', (_event, contents) => {
     const altLeft = input.key === 'Left' && input.alt;
     if (back || altLeft) {
       event.preventDefault();
-      destroySiteView();
-      sendToLauncher('site:closed');
+      closeSite();
     }
   });
 });
@@ -782,6 +836,7 @@ if (isPrimary) app.whenReady().then(async () => {
 
   mainWindow = createWindow();
   maybeCapture(mainWindow);
+
 
   // Non-fatal: a missing CDM does not stop the launcher, it only means no site
   // will ever play protected video here.

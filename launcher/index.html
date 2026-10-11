@@ -10,12 +10,11 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <!-- One bar, two shapes. On the launcher it spans the window with the
-         search and tabs. Over a site it shrinks to a small floating pair of
-         controls (bar-site) that sits on top of the page, so revealing them
-         never covers it or shifts it. -->
+    <!-- The launcher's own bar: search and Add app.
+         Over a site this page is behind the site view and shows nothing. The
+         controls are injected into the page instead (src/site-controls.js),
+         because a child view always paints above this one. -->
     <header class="bar" id="bar">
-      <button id="back" class="btn btn-ghost" hidden>&larr; Back</button>
       <input
         id="search"
         class="search"
@@ -27,19 +26,6 @@
       <span id="site-title" class="site-title" hidden></span>
       <div class="bar-actions">
         <button id="add" class="btn">Add app</button>
-        <button
-          id="open-brave"
-          class="btn btn-ghost btn-icon"
-          hidden
-          title="Open in Brave"
-          aria-label="Open in Brave"
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <rect x="2.5" y="4" width="19" height="16" rx="2.5" />
-            <path d="M2.5 9h19" />
-            <path d="M6 6.5h.01M9 6.5h.01" />
-          </svg>
-        </button>
       </div>
     </header>
 

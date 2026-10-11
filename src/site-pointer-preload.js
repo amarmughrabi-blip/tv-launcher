@@ -78,3 +78,15 @@ window.addEventListener('touchmove', (event) => {
 // screen, which is exactly the "it shows up when I am nowhere near the top"
 // behaviour. Escape still works for leaving a site, which is the case those
 // listeners were standing in for.
+/*
+ * Bridge for the controls injected into the page (src/site-controls.js).
+ *
+ * That script runs in the page's own world, where ipcRenderer does not exist,
+ * so it dispatches a CustomEvent instead. This listener shares the DOM with it,
+ * which is enough to hear the event without the page ever seeing this code.
+ */
+document.addEventListener('tvl-control', (event) => {
+  const action = event && event.detail && event.detail.action;
+  if (typeof action !== 'string') return;
+  ipcRenderer.send('site:control', { action });
+});

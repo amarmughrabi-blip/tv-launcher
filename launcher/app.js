@@ -39,8 +39,6 @@ const el = {
   empty: document.getElementById('empty'),
   search: document.getElementById('search'),
   add: document.getElementById('add'),
-  brave: document.getElementById('open-brave'),
-  back: document.getElementById('back'),
   siteTitle: document.getElementById('site-title'),
 
   editor: document.getElementById('editor'),
@@ -326,27 +324,24 @@ function makeBadge(record) {
 async function open(url) {
   activeUrl = url;
   await bridge.openSite(url);
-  el.brave.hidden = !(await bridge.braveAvailable());
 }
 
 async function goBack() {
   await bridge.back();
   activeUrl = null;
-  el.brave.hidden = true;
   render();
 }
 
 /** Swap the shared bar between launcher controls and site controls. */
 function setBarMode(mode, title = '') {
+  // Over a site the launcher page sits behind the site view, so the bar has
+  // nothing left to show: the controls are injected into the page itself
+  // (src/site-controls.js).
   const siteOpen = mode === 'site';
   el.search.hidden = siteOpen;
   el.add.hidden = siteOpen;
-  el.back.hidden = !siteOpen;
-  el.siteTitle.hidden = !siteOpen;
+  el.siteTitle.hidden = true;
   el.siteTitle.textContent = title;
-  // Over a site the bar stops being a bar: it becomes a small floating pair of
-  // controls, so it covers almost none of the page while it is up.
-  el.bar.classList.toggle('bar-site', siteOpen);
 }
 
 /*
@@ -374,7 +369,6 @@ bridge.onChromeVisible((visible) => {
 el.bar.addEventListener('mouseenter', () => bridge.chromeHover(true));
 el.bar.addEventListener('mouseleave', () => bridge.chromeHover(false));
 
-el.back.addEventListener('click', goBack);
 
 async function openEditor(record) {
   editing = record;
@@ -457,12 +451,6 @@ el.addForm.addEventListener('submit', async (e) => {
   el.adder.close();
   await load();
   toast('Added');
-});
-
-el.brave.addEventListener('click', async () => {
-  if (!activeUrl) return;
-  const ok = await bridge.openInBrave(activeUrl);
-  toast(ok ? 'Opened in Brave' : 'Could not launch a browser');
 });
 
 el.search.addEventListener('input', () => {
@@ -860,7 +848,6 @@ bridge.onSiteOpened(({ url, title }) => {
 bridge.onSiteClosed(() => {
   activeUrl = null;
   setBarMode('launcher');
-  el.brave.hidden = true;
   render();
 });
 
