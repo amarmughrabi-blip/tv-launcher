@@ -3,14 +3,14 @@
 /**
  * The genre strip.
  *
- * Twenty-eight genres will not fit across a television. The strip scrolls, and
- * the failure worth catching is the one where it does not *look* like it scrolls:
- * a hidden scrollbar plus a chip sheared off mid-word reads as a row somebody
- * cut short rather than a control you can move along.
+ * It used to scroll sideways with its scrollbar hidden, so twenty-eight genres
+ * ended in a chip sheared off mid-word with nothing to say it went anywhere --
+ * and, worse, half the genres were behind a scroll nobody was going to discover
+ * on a television.
  *
- * So the assertions are about affordance, not just about scrolling -- that
- * there is a scrollbar, that the ends fade, and that the fades appear at the
- * right end and not the wrong one.
+ * So it wraps. The rule being defended is simple and absolute: no genre may be
+ * out of sight. Anything that makes a chip unreachable fails here, and that
+ * includes the scroll affordances that are no longer supposed to be needed.
  */
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -27,137 +27,118 @@ const fail = (msg) => `FAIL ${msg} | ${out.join(' | ')}`;
   await wait(2000);
 
   const strip = document.getElementById('tv-genres');
-  const wrap = document.getElementById('tv-genres-wrap');
-  if (!strip || !wrap) return fail('the genre strip is missing');
-  if (strip.parentElement !== wrap) {
-    return fail('the strip is not inside its scroll wrapper');
+  if (!strip) return fail('the genre strip is missing');
+
+  const chips = [...strip.querySelectorAll('.tv-genre')];
+  if (chips.length < 5) return fail(`only ${chips.length} genres in the strip`);
+
+  /* --------------------- every genre must be visible ---------------------- */
+
+  const box = strip.getBoundingClientRect();
+  const hidden = [];
+  for (const chip of chips) {
+    const r = chip.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) hidden.push(`${chip.dataset.genre} (not drawn)`);
+    else if (r.right > box.right + 2) hidden.push(`${chip.dataset.genre} (past the right edge)`);
+    else if (r.left < box.left - 2) hidden.push(`${chip.dataset.genre} (past the left edge)`);
+    else if (r.bottom > box.bottom + 2) hidden.push(`${chip.dataset.genre} (below the strip)`);
   }
+  if (hidden.length) {
+    return fail(`these genres are out of sight and would need scrolling: ${hidden.slice(0, 6).join(', ')}`);
+  }
+  out.push(`ok   all ${chips.length} genres are on screen at once`);
 
-  // Narrowed first, because a check that only runs at full width proves nothing
-  // about a screen small enough to need scrolling.
-  await bridge.debugResize(760, 900);
-  await wait(600);
+  /* ---------------------------- they must fit ----------------------------- */
 
-  /*
-   * The fixture carries a handful of genres; the real list carries twenty-eight.
-   * With too few chips the strip fits and there is nothing to test -- which is
-   * the strip behaving correctly, and the check learning nothing. So when it
-   * does not overflow, borrow enough chips to make it, and give them back.
-   * What is under test is the scrolling and the affordance, and those depend
-   * only on there being more strip than window.
-   */
+  // Small enough to be read, big enough to be aimed at with a remote.
+  const sample = chips[0].getBoundingClientRect();
+  if (sample.height < 20) return fail(`the chips are ${Math.round(sample.height)}px tall -- unreadable`);
+  if (sample.height > 38) return fail(`the chips are ${Math.round(sample.height)}px tall -- no smaller than before`);
+  out.push(`ok   the chips are ${Math.round(sample.width)}x${Math.round(sample.height)}, down from 90x38`);
+
+  // A strip that fits needs no scrolling, so nothing should be cut off and
+  // nothing should be inviting a scroll that cannot happen.
+  if (strip.scrollWidth > strip.clientWidth + 2) {
+    return fail('the strip still overflows sideways despite wrapping');
+  }
+  out.push('ok   nothing is cut off, so there is nothing to scroll');
+
+  /* ------------------- and it wraps when there are many ------------------ */
+
+  // The shipped fixture carries a handful of genres where the real list has
+  // twenty-eight, so it fits on one row and proves nothing about wrapping. Chips
+  // are borrowed to make it overflow and handed back afterwards -- what is under
+  // test is the layout, and that depends only on there being more genres than
+  // fit.
   const borrowed = [];
-  if (strip.scrollWidth <= strip.clientWidth) {
-    for (let i = 0; i < 20 && strip.scrollWidth <= strip.clientWidth + 400; i += 1) {
-      const chip = document.createElement('button');
-      chip.className = 'tv-genre';
-      chip.type = 'button';
-      chip.dataset.genre = `borrowed-${i}`;
-      chip.textContent = `borrowed genre ${i}`;
-      strip.appendChild(chip);
-      borrowed.push(chip);
-    }
-    await wait(300);
-    out.push('ok   (the fixture has too few genres to overflow, so the strip borrowed some)');
+  while (strip.children.length < 40) {
+    const chip = document.createElement('button');
+    chip.className = 'tv-genre';
+    chip.type = 'button';
+    chip.dataset.genre = `borrowed-${borrowed.length}`;
+    chip.textContent = `borrowed ${borrowed.length}`;
+    strip.appendChild(chip);
+    borrowed.push(chip);
   }
+  await wait(400);
 
-  const slack = strip.scrollWidth - strip.clientWidth;
-  if (slack <= 0) return fail('the strip is not scrollable at 760px -- nothing to test');
-  out.push(`ok   the strip scrolls (${slack}px beyond the edge at 760px)`);
-
-  /* ------------------------------ the scrollbar --------------------------- */
-
-  // A stylesheet rule is the only thing that can say whether a scrollbar is
-  // drawn: it is not in the DOM and not in any computed style of an element.
-  const rules = [...document.styleSheets]
-    .flatMap((sheet) => {
-      try {
-        return [...sheet.cssRules];
-      } catch {
-        return [];
-      }
-    })
-    .filter((r) => r.selectorText && r.selectorText.includes('tv-genres::-webkit-scrollbar'));
-  if (!rules.length) return fail('no scrollbar styling at all for the strip');
-
-  const hidden = rules.some((r) => /display:\s*none/.test(r.cssText));
-  const sized = rules.some((r) => /height:\s*\d/.test(r.cssText));
-  if (hidden) return fail('the scrollbar is still hidden -- the strip does not look scrollable');
-  if (!sized) return fail('the scrollbar is not given a height, so it draws at full size');
-  out.push('ok   the scrollbar is drawn, thin and themed');
-
-  /* -------------------------------- the fades ----------------------------- */
-
-  const at = (left) => {
-    strip.scrollLeft = left;
-    // Chromium throttles scroll events while the window is unfocused, so the
-    // change is made the same way the app makes it: by dispatching the event the
-    // listener is waiting for.
-    strip.dispatchEvent(new Event('scroll'));
-    return {
-      left: Math.round(strip.scrollLeft),
-      atStart: wrap.classList.contains('has-more-left'),
-      atEnd: wrap.classList.contains('has-more-right'),
-    };
-  };
-
-  const start = at(0);
-  if (start.atStart) return fail('there is a fade on the left at the left edge');
-  if (!start.atEnd) return fail('nothing marks that there is more to the right');
-
-  const end = at(strip.scrollWidth);
-  if (end.left < slack - 8) return fail(`the strip would not scroll to its end (${end.left} of ${slack})`);
-  if (!end.atStart) return fail('there is no fade on the left once scrolled away from it');
-  if (end.atEnd) return fail('there is a fade on the right at the right edge');
-  out.push('ok   the fade is on the end that has more, and only that one');
-
-  const middle = at(Math.round(slack / 2));
-  if (!middle.atStart || !middle.atEnd) return fail('midway, both ends should be faded');
-  out.push('ok   midway, both ends are faded');
-
-  /* ------------------------------- the keyboard --------------------------- */
-
-  // This is a television launcher. A remote has no wheel, so left and right on
-  // the strip are how anybody gets along it.
-  at(0);
-  document.body.focus();
-  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
-  await wait(700);
-  const afterKey = Math.round(strip.scrollLeft);
-  if (afterKey <= 0) return fail('the right arrow did not move the strip');
-
-  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
-  await wait(700);
-  if (Math.round(strip.scrollLeft) >= afterKey) return fail('the left arrow did not move it back');
-  out.push('ok   the arrow keys move the strip, for a remote as well as a mouse');
-
-  /* --------------------------- choosing a genre --------------------------- */
-
-  // A genre chosen by click has to be brought into view, or clicking one and
-  // watching nothing happen is the same complaint as a strip that does not scroll.
-  const real = [...strip.querySelectorAll('.tv-genre')]
-    .filter((c) => !c.dataset.genre.startsWith('borrowed-') && c.dataset.genre !== 'all');
-  if (!real.length) return fail('no real genres to choose from');
-  const wanted = real[real.length - 1].dataset.genre;
-  at(0);
-  strip.querySelector(`.tv-genre[data-genre="${CSS.escape(wanted)}"]`).click();
-  await wait(900);
-
-  // Re-queried, not held: choosing a genre rebuilds the strip, so the node that
-  // was clicked is detached and measures zero by zero.
-  const chosen = strip.querySelector(`.tv-genre[data-genre="${CSS.escape(wanted)}"]`);
-  if (!chosen) return fail('the chosen genre vanished from the strip');
-  const lastBox = chosen.getBoundingClientRect();
-  const stripBox = strip.getBoundingClientRect();
-  if (lastBox.right > stripBox.right + 4 || lastBox.left < stripBox.left - 4) {
-    return fail('a genre chosen by click was not brought into view');
+  const many = [...strip.querySelectorAll('.tv-genre')];
+  const manyRows = new Set(many.map((c) => Math.round(c.getBoundingClientRect().top)));
+  const manyBox = strip.getBoundingClientRect();
+  const cutOff = many.filter((c) => {
+    const r = c.getBoundingClientRect();
+    return r.right > manyBox.right + 2 || r.left < manyBox.left - 2;
+  });
+  if (cutOff.length) {
+    return fail(`${cutOff.length} of ${many.length} genres are cut off even with wrapping`);
   }
-  if (!chosen.classList.contains('is-active')) return fail('the chosen genre did not become the active one');
-  out.push('ok   a genre chosen by click is scrolled into view and selected');
+  if (manyRows.size < 2) return fail(`${many.length} genres fitted on one row -- the chips have not shrunk`);
+  out.push(`ok   ${many.length} genres wrap onto ${manyRows.size} rows with none cut off`);
 
-  // Give the borrowed chips back.
   for (const chip of borrowed) chip.remove();
+  await wait(200);
+
+  /* ------------------------ the narrow-window case ------------------------ */
+
+  // Squeezed, the chips have to keep working: every one still readable and
+  // still clickable, and the ones that drop below the fold reachable.
+  await bridge.debugResize(700, 900);
+  await wait(700);
+  const narrow = [...strip.querySelectorAll('.tv-genre')];
+  const narrowHidden = narrow.filter((c) => c.getBoundingClientRect().width === 0);
+  if (narrowHidden.length) {
+    return fail(`${narrowHidden.length} genres disappeared at 700px`);
+  }
+  // Still hittable: a chip must be the topmost thing at its own centre.
+  let covered = 0;
+  for (const chip of narrow) {
+    const r = chip.getBoundingClientRect();
+    if (r.top < 0 || r.bottom > window.innerHeight) continue;
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    if (hit && !chip.contains(hit) && hit !== chip) covered += 1;
+  }
+  if (covered > 0) return fail(`${covered} genres are painted over by something else`);
+  out.push(`ok   at 700px every genre is still drawn and still clickable (${narrow.length})`);
 
   await bridge.debugResize(1280, 900);
+  await wait(400);
+
+  /* ------------------------- choosing still works ------------------------- */
+
+  const real = narrow.filter((c) => c.dataset.genre !== 'all');
+  const wanted = real[real.length - 1].dataset.genre;
+  strip.querySelector(`.tv-genre[data-genre="${CSS.escape(wanted)}"]`).click();
+  await wait(800);
+  const chosen = strip.querySelector(`.tv-genre[data-genre="${CSS.escape(wanted)}"]`);
+  if (!chosen || !chosen.classList.contains('is-active')) {
+    return fail(`choosing ${wanted} did not make it the active genre`);
+  }
+  const cb = chosen.getBoundingClientRect();
+  const sb = strip.getBoundingClientRect();
+  if (cb.right > sb.right + 2 || cb.left < sb.left - 2) {
+    return fail('the chosen genre was not brought into view');
+  }
+  out.push('ok   choosing a genre still selects it and brings it into view');
+
   return out.join(' | ');
 })();

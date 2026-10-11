@@ -931,14 +931,22 @@ body::before {
 
 .tv-genres {
   display: flex;
-  flex-wrap: nowrap;
-  gap: 8px;
+  /*
+   * Wraps rather than scrolls.
+   *
+   * Twenty-eight genres on one row means either chips too small to read or a
+   * strip you can only reach by scrolling -- and a genre you cannot see is a
+   * genre you do not go to. Wrapping costs a second row and shows all of them.
+   * Scrolling is still possible if a window gets narrow enough to force it.
+   */
+  flex-wrap: wrap;
+  gap: 6px;
   overflow-x: auto;
-  scrollbar-width: none;
-  padding: 2px 0 14px;
-  /* A long strip should not be clipped at the stage edge with no way to tell
-     there is more of it. */
-  scroll-snap-type: x proximity;
+  padding: 2px 0 12px;
+  /* Deliberately NOT scrollbar-width: none. In Chromium that wins over
+     ::-webkit-scrollbar, so the rule below was never applied and the scrollbar
+     stayed hidden no matter what was written underneath it. The two have to
+     agree, and only one of them can be right. */
 }
 
 /*
@@ -1004,15 +1012,19 @@ body::before {
   opacity: 1;
 }
 
+/*
+ * Smaller, because twenty-eight of these have to fit. A strip you can only
+ * reach by scrolling is a strip half the genres are hiding behind, and the
+ * counts on each chip are read at a glance rather than studied.
+ */
 .tv-genre {
   flex: none;
-  scroll-snap-align: start;
   border: 1px solid var(--surface-5);
   background: var(--surface-3);
   color: var(--muted);
   font: inherit;
-  font-size: 14px;
-  padding: 7px 14px;
+  font-size: 12.5px;
+  padding: 5px 10px;
   border-radius: 999px;
   cursor: pointer;
   white-space: nowrap;
