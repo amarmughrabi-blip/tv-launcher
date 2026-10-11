@@ -573,6 +573,15 @@ ipcMain.handle('channels:play', (_e, { url }) => {
   return result;
 });
 
+// Switching from inside the player. Resolved by URL, never by name: the
+// renderer is the least trustworthy party involved and this decides what is
+// fetched.
+ipcMain.on('player:switch', (_e, { url } = {}) => {
+  const channel = channels.findByUrl(url);
+  if (!channel) return;
+  player.send(channel);
+});
+
 ipcMain.handle('player:close', () => {
   player.close();
   return { ok: true };
@@ -596,7 +605,12 @@ ipcMain.on('player:report', (_e, payload) => {
   if (!payload) return;
   // The page announcing itself is what releases the queued channel: a message
   // sent before the page has run is simply dropped.
-  if (payload.ready) player.onPageReady();
+  if (payload.ready) {
+    player.onPageReady();
+    // Only now can the list be handed over: the same lost-message problem the
+    // first channel had.
+    player.setChannels(channels.grouped());
+  }
   if (payload.error) log(`player: ${JSON.stringify(payload)}`);
 });
 ipcMain.handle('site:back', () => {
@@ -726,6 +740,49 @@ if (process.env.TVL_DEBUG_INPUT === '1') {
       return JSON.stringify({ nonBlackPct: Math.round((lit / (d.length / 4)) * 100), t: Number(v.currentTime.toFixed(2)) });
     })()`).catch((e) => ({ ok: false, err: e.message }));
   });
+
+  ipcMain.handle('debug:player-ui', async () => {
+    if (!player.isOpen()) return { open: false };
+    const w = playerWindowRef();
+    return w.webContents.executeJavaScript(`(() => {
+      const list = document.getElementById('channels');
+      const rows = list.querySelectorAll('.ch');
+      const back = document.getElementById('back').getBoundingClientRect();
+      return JSON.stringify({
+        listRows: rows.length,
+        listOpen: !list.hidden,
+        listLeft: Math.round(list.getBoundingClientRect().left),
+        backLeft: Math.round(back.left), backTop: Math.round(back.top),
+        current: (list.querySelector('.ch.is-current')||{}).textContent || null,
+        idle: document.getElementById('chrome').classList.contains('is-idle'),
+      });
+    })()`).catch((e) => ({ open: true, err: e.message }));
+  });
+
+  ipcMain.handle('debug:player-pick', async (_e, { index } = {}) => {
+    if (!player.isOpen()) return { ok: false };
+    const w = playerWindowRef();
+    return w.webContents.executeJavaScript(`(() => {
+      const rows = [...document.querySelectorAll('.ch')];
+      const row = rows[${Number(index) || 0}];
+      if (!row) return JSON.stringify({ ok: false });
+      row.click();
+      return JSON.stringify({ ok: true, name: row.textContent.trim().slice(0,30) });
+    })()`).catch((e) => ({ ok: false, err: e.message }));
+  });
+
+  ipcMain.handle('debug:player-toggle', async () => {
+    if (!player.isOpen()) return { ok: false };
+    const w = playerWindowRef();
+    return w.webContents
+      .executeJavaScript("document.getElementById('toggle').click(); 'clicked'")
+      .catch((err) => ({ ok: false, err: err.message }));
+  });
+
+  ipcMain.handle('debug:launcher-visible', () => ({
+    visible: Boolean(mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()),
+    focused: Boolean(mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()),
+  }));
 
   ipcMain.handle('debug:popups', () => ({ attempted: popupsAttempted }));
 

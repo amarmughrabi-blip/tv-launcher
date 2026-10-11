@@ -9,15 +9,41 @@
     <div class="stage">
       <video id="video" autoplay playsinline></video>
 
-      <!-- Only shown when something is actually wrong. A permanent overlay on
-           every channel would be worse than none. -->
+      <!--
+        Chrome over the video. It hides itself when the remote is idle and comes
+        back on any input, because a control sitting on top of the picture for
+        the whole film is worse than no control at all.
+      -->
+      <div class="chrome" id="chrome">
+        <div class="chrome-top">
+          <!-- Leave, and hide/show the list. Both top left, as asked. -->
+          <button class="ctl" id="back" title="Back to the launcher (Escape)" aria-label="Back to the launcher">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
+          </button>
+          <button class="ctl" id="toggle" title="Hide channels" aria-label="Hide channels" aria-expanded="true">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="3" y="4.5" width="18" height="15" rx="2.5" />
+              <path d="M9.5 4.5v15" />
+            </svg>
+          </button>
+          <span class="chrome-name" id="chrome-name"></span>
+        </div>
+
+        <!--
+          The channel list, down the left. Switch without leaving: the whole
+          point of a TV is that you can change your mind mid-programme.
+        -->
+        <div class="channels" id="channels">
+          <div class="channels-inner" id="channels-inner"></div>
+        </div>
+      </div>
+
       <div class="problem" id="problem" hidden>
         <p class="problem-title" id="problem-title">This channel is not playing</p>
         <p class="problem-detail" id="problem-detail"></p>
         <p class="problem-hint">Press Escape to go back</p>
       </div>
 
-      <!-- Transient: the channel name, then out of the way. -->
       <div class="now" id="now" hidden><span id="now-name"></span><span id="now-res"></span></div>
     </div>
 

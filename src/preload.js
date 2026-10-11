@@ -60,6 +60,10 @@ contextBridge.exposeInMainWorld('api', {
   debugRealClick: (x, y) => ipcRenderer.invoke('debug:real-click', { x, y }),
   debugPlayer: () => ipcRenderer.invoke('debug:player'),
   debugPlayerPixels: () => ipcRenderer.invoke('debug:player-pixels'),
+  debugPlayerUI: () => ipcRenderer.invoke('debug:player-ui'),
+  debugPlayerPick: (index) => ipcRenderer.invoke('debug:player-pick', { index }),
+  debugPlayerToggle: () => ipcRenderer.invoke('debug:player-toggle'),
+  debugLauncherVisible: () => ipcRenderer.invoke('debug:launcher-visible'),
   debugPopups: () => ipcRenderer.invoke('debug:popups'),
   debugCosmetics: () => ipcRenderer.invoke('debug:cosmetics'),
   // Start-up progress: the loading screen covers the window until 'ready'.

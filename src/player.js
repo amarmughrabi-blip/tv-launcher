@@ -36,17 +36,31 @@ let win = null;
  */
 let pageReady = false;
 let pending = null;
+/** The channel list, sent once the page can take it. */
+let pendingList = null;
 
 function flush() {
-  if (!pageReady || !pending || !isOpen()) return;
-  const payload = pending;
-  pending = null;
-  win.webContents.send('player:load', payload);
+  if (!pageReady || !isOpen()) return;
+  if (pendingList) {
+    win.webContents.send('player:channels', pendingList);
+    pendingList = null;
+  }
+  if (pending) {
+    const payload = pending;
+    pending = null;
+    win.webContents.send('player:load', payload);
+  }
 }
 
 /** The page tells us it is listening. Called once per load of the page. */
 function onPageReady() {
   pageReady = true;
+  flush();
+}
+
+/** Supply the grouped channel list so the player can switch without leaving. */
+function setChannels(grouped) {
+  pendingList = grouped;
   flush();
 }
 
@@ -92,6 +106,22 @@ function isOpen() {
 }
 
 /**
+ * What the page is told about a channel.
+ *
+ * `url` is the tv:// rewrite the player can actually fetch; `source` is the
+ * channel's real url, which is how the page matches it against the list. The
+ * two can never be compared directly, or the playing channel is never found.
+ */
+function payloadFor(channel) {
+  return {
+    url: toStreamUrl(channel.url),
+    source: channel.url,
+    name: channel.name,
+    res: channel.res || null,
+  };
+}
+
+/**
  * Open (or retarget) the player. One window, reused between channels: creating
  * a window per channel costs a visible flash and a fresh hls.js instance, and
  * the user is switching between channels with the remote.
@@ -121,7 +151,13 @@ function open(channel, parentWindow) {
     win.on('closed', () => {
       win = null;
       resetPageState();
-      if (parentWindow && !parentWindow.isDestroyed()) parentWindow.focus();
+      // The launcher is hidden while a channel plays, so it has to be shown
+      // again -- focus() on a hidden window does nothing, and the viewer is left
+      // looking at whatever is behind the app with no way back into it.
+      if (parentWindow && !parentWindow.isDestroyed()) {
+        parentWindow.show();
+        parentWindow.focus();
+      }
     });
 
     resetPageState();
@@ -129,11 +165,7 @@ function open(channel, parentWindow) {
   }
 
   // Queued, not sent: on a freshly created window the page is not listening yet.
-  pending = {
-    url: toStreamUrl(channel.url),
-    name: channel.name,
-    res: channel.res || null,
-  };
+  pending = payloadFor(channel);
   flush();
 
   if (!win.isVisible()) win.show();
@@ -152,13 +184,19 @@ function close() {
 
 function send(channel) {
   if (isOpen() && channel && channel.url) {
-    pending = {
-      url: toStreamUrl(channel.url),
-      name: channel.name,
-      res: channel.res || null,
-    };
+    pending = payloadFor(channel);
     flush();
   }
 }
 
-module.exports = { handler, open, close, send, isOpen, onPageReady, toStreamUrl, SCHEME };
+module.exports = {
+  handler,
+  open,
+  close,
+  send,
+  setChannels,
+  isOpen,
+  onPageReady,
+  toStreamUrl,
+  SCHEME,
+};

@@ -100,14 +100,48 @@ const fail = (msg) => `FAIL ${msg} | ${out.join(' | ')}`;
     `ok   ${targetName} plays full screen (${state.state.w}x${state.state.h}, ${pixels.nonBlackPct}% lit)`,
   );
 
-  // --- and it closes --------------------------------------------------------
-  await bridge.closePlayer();
-  await wait(800);
-  if (bridge.debugPlayer) {
-    const after = await bridge.debugPlayer();
-    if (after.open) return fail('the player did not close');
+  // --- the controls over the video ------------------------------------------
+  // Both at the top left, as asked, with the channel list down the left so you
+  // can change your mind without leaving.
+  const ui = JSON.parse(await bridge.debugPlayerUI());
+  if (!ui.listRows) return fail('the channel list is empty in the player');
+  if (!(ui.backLeft < 200)) {
+    return fail(`Back is not on the left (left edge at ${ui.backLeft}px)`);
   }
-  out.push('ok   the player closes');
+  if (!(ui.listLeft < 120)) {
+    return fail(`the channel list is not down the left (left edge at ${ui.listLeft}px)`);
+  }
+  if (!ui.current || !ui.current.toLowerCase().includes(targetName.toLowerCase().split(' ')[0])) {
+    return fail(`the playing channel is not marked in the list (current=${ui.current})`);
+  }
+  out.push(
+    `ok   Back and a ${ui.listRows}-channel list on the left, playing one marked`,
+  );
+
+  // The toggle hides and shows the list.
+  await bridge.debugPlayerToggle();
+  await wait(500);
+  const hidden = JSON.parse(await bridge.debugPlayerUI());
+  if (hidden.listOpen) return fail('the toggle did not hide the channel list');
+  await bridge.debugPlayerToggle();
+  await wait(500);
+  const shown = JSON.parse(await bridge.debugPlayerUI());
+  if (!shown.listOpen) return fail('the toggle did not bring the channel list back');
+  out.push('ok   the toggle hides and shows the channel list');
+
+  // --- and it closes --------------------------------------------------------
+  // Closing has to bring the launcher back, not just take the player away. The
+  // launcher is hidden while a channel plays, and focusing a hidden window does
+  // nothing -- which left the viewer looking at the desktop with no way in.
+  await bridge.closePlayer();
+  await wait(1200);
+  const after = await bridge.debugPlayer();
+  if (after.open) return fail('the player did not close');
+  const back = await bridge.debugLauncherVisible();
+  if (!back.visible) {
+    return fail('the player closed but the launcher did not come back');
+  }
+  out.push('ok   the player closes and the launcher comes back');
 
   return out.join(' | ');
 })();

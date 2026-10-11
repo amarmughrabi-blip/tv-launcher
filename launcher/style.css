@@ -927,6 +927,7 @@ body::before {
 }
 
 .tv-face {
+  position: relative;
   width: 100%;
   aspect-ratio: 4 / 3;
   border-radius: 12px;
@@ -958,13 +959,18 @@ body::before {
   letter-spacing: 0.02em;
 }
 
+/* On the corner of the face, never over the initials. */
 .tv-res {
   position: absolute;
-  right: -6px;
-  bottom: -8px;
-  font: 700 10px/1 system-ui, sans-serif;
+  right: 5px;
+  bottom: 5px;
+  padding: 2px 5px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.5);
+  font: 700 9px/1.1 system-ui, sans-serif;
   font-style: normal;
-  color: rgba(255, 255, 255, 0.62);
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.82);
 }
 
 .tv-logo {

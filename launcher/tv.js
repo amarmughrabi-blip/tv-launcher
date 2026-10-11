@@ -82,6 +82,17 @@ function buildTile(channel, onPlay) {
     face.appendChild(makeMark(channel));
   }
 
+  // The resolution sits on the corner of the face, not on the initials. As a
+  // child of the mark it was absolutely positioned over the letters and both
+  // became unreadable.
+  const res = shortRes(channel.res);
+  if (res) {
+    const tag = document.createElement('i');
+    tag.className = 'tv-res';
+    tag.textContent = res;
+    face.appendChild(tag);
+  }
+
   const name = document.createElement('span');
   name.className = 'tv-name';
   name.textContent = channel.name;
@@ -104,13 +115,6 @@ function makeMark(channel) {
   const mark = document.createElement('span');
   mark.className = 'tv-mark';
   mark.textContent = initials(channel.name);
-  const res = shortRes(channel.res);
-  if (res) {
-    const tag = document.createElement('i');
-    tag.className = 'tv-res';
-    tag.textContent = res;
-    mark.appendChild(tag);
-  }
   return mark;
 }
 

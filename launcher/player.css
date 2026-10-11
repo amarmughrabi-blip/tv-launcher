@@ -92,3 +92,185 @@ video {
   font-size: 12px;
   font-weight: 400;
 }
+/* ---------------- chrome over the video ---------------- */
+
+/*
+ * Controls and the channel list. Both hide when the remote is idle and come
+ * back on any input -- a control parked over the picture for a whole film is
+ * worse than no control at all.
+ */
+.chrome {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.25s ease;
+}
+
+.chrome[hidden] {
+  display: none;
+}
+
+.chrome.is-idle {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.chrome-top {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 32px);
+  padding: 6px;
+  border-radius: 999px;
+  background: rgba(8, 10, 14, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(10px);
+  pointer-events: auto;
+}
+
+.ctl {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #eef1f7;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.ctl:hover,
+.ctl:focus-visible {
+  background: rgba(255, 255, 255, 0.14);
+  outline: none;
+}
+
+.ctl svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The list is out: the toggle points at where it would be. */
+.ctl#toggle svg {
+  transition: transform 0.2s ease;
+}
+
+.ctl#toggle[aria-expanded='false'] svg {
+  transform: scaleX(-1);
+}
+
+.chrome-name {
+  padding: 0 12px 0 4px;
+  color: #f2f4f8;
+  font: 500 14px/1 system-ui, sans-serif;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------------- the channel list ---------------- */
+
+.channels {
+  position: absolute;
+  top: 74px;
+  bottom: 22px;
+  left: 16px;
+  width: 268px;
+  padding: 6px;
+  border-radius: 16px;
+  background: rgba(8, 10, 14, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(12px);
+  pointer-events: auto;
+  overflow: hidden;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.channels[hidden] {
+  display: none;
+}
+
+.channels-inner {
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+  padding-right: 4px;
+}
+
+.channels-inner::-webkit-scrollbar {
+  width: 6px;
+}
+
+.channels-inner::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.ch-group {
+  margin: 10px 0 4px;
+  padding: 0 8px;
+  font: 600 11px/1 system-ui, sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #838d9f;
+}
+
+.ch-group:first-child {
+  margin-top: 4px;
+}
+
+.ch {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #dfe3ec;
+  font: 500 14px/1.25 system-ui, sans-serif;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ch:hover,
+.ch:focus-visible {
+  background: rgba(255, 255, 255, 0.1);
+  outline: none;
+}
+
+.ch.is-current {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+
+.ch-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ch-country {
+  flex: none;
+  font-size: 11px;
+  color: #7d8798;
+}
